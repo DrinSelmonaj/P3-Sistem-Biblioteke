@@ -37,3 +37,6 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Konfigurimi lokal i databazes - permban credentials, s'shkon ne GitHub
+src/main/resources/config.properties
