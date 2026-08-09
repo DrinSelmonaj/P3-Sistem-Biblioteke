@@ -6,10 +6,10 @@ public abstract class Person {
     private String phone;
     private String email;
 
-    public Person(String id, String email, String name, String phone) {
+    public Person(String id, String name, String email, String phone) {
         this.id = id;
-        this.email = email;
         this.name = name;
+        this.email = email;
         this.phone = phone;
     }
 
