@@ -47,6 +47,12 @@ public class Loan {
     // Vetem DAO-t duhet ta thirrasin — pas INSERT (RETURNING id) ose gjate mapRowToLoan().
     public void setId(Integer id) { this.id = id; }
 
+    // Vetem DAO-t duhet ta thirrasin — perdoret ne mapRowToLoan() per te mbishkruar
+    // dueDate-in e rillogaritur automatikisht ne konstruktor (loanDate + loanPeriodDays)
+    // me vleren reale te ruajtur ne DB. Pa kete, cdo ndryshim manual i due_date (p.sh.
+    // shtyrje afati nga bibliotekari) do te injorohej sa here huazimi rilexohet nga DB.
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+
     public Member getMember() { return member; }
     public LibraryItem getItem() { return item; }
     public LocalDate getLoanDate() { return loanDate; }

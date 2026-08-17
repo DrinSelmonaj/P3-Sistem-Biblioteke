@@ -144,6 +144,10 @@ public class LoanDAOImpl implements LoanDAO {
         Loan loan = new Loan( member , item , rs.getDate("borrow_date").toLocalDate());
         loan.setId(rs.getInt("id"));
 
+        // Mbishkruajme dueDate-in e rillogaritur automatikisht ne konstruktor
+        // me vleren reale te ruajtur ne DB — shih komentin te Loan.setDueDate().
+        loan.setDueDate(rs.getDate("due_date").toLocalDate());
+
         Date returnDate = rs.getDate("return_date");
         if (returnDate != null) {
             loan.markReturned(returnDate.toLocalDate());
