@@ -10,4 +10,9 @@ public interface LoanDAO {
     List<Loan> findAll();
     void save(Loan loan);
     void markReturned(int loanId, java.time.LocalDate returnDate);
+
+    // I domosdoshem per LoanService.canBorrowMore() logic: numeron huazimet aktive
+    // (return_date IS NULL) te nje anetari, pa u mbeshtetur te Member.currentLoans
+    // (qe s'populohet nga DB — do te kerkonte varesi te kryqezuar Member<->Loan).
+    List<Loan> findActiveByMember(String memberId);
 }

@@ -103,6 +103,30 @@ public class LoanDAOImpl implements LoanDAO {
         }
     }
 
+    @Override
+    public List<Loan> findActiveByMember(String memberId) {
+        // return_date IS NULL = huazim ende aktiv (s'eshte kthyer).
+        // Perdoret nga LoanService per te kontrolluar kufirin MAX_LOANS te Member
+        // pa u mbeshtetur te fusha ne-memorje currentLoans (qe s'eshte e sinkronizuar me DB).
+        String sql = "SELECT id, member_id, item_id, borrow_date, due_date, return_date " +
+                "FROM loans WHERE member_id = ? AND return_date IS NULL";
+
+        List<Loan> activeLoans = new ArrayList<>();
+
+        try (Connection conn = DBConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, memberId);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                activeLoans.add(mapRowToLoan(rs));
+            }
+            return activeLoans;
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate kerkimit te huazimeve aktive per anetarin " + memberId, e);
+        }
+    }
+
     // Kjo eshte pika ku shfaqet polimorfizmi: s'e dime nese item_id i perket
     // nje Book apo DVD derisa te kontrollojme item_type. LibraryItem (abstrakte)
     // na lejon te kthejme te dyja llojet permes te njejtit tip referimi.

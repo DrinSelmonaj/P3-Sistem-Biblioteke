@@ -2,6 +2,7 @@ package org.example;
 
 import org.example.dao.*;
 import org.example.model.*;
+import org.example.service.*;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -78,6 +79,34 @@ public class Main {
 
         fineDAO.markPaid(fetched.getId());
         System.out.println("markPaid() u thirr per id=" + fetched.getId());
+
+        // --- Test LoanService ---
+        ReservationDAO reservationDAO2 = new ReservationDAOImpl(memberDAO, bookDAO, dvdDAO);
+        LoanService loanService = new LoanService(memberDAO, loanDAO, bookDAO, dvdDAO, reservationDAO2);
+
+        // 1. Kontrollo gjendjen fillestare te B002
+        Book b002Before = bookDAO.findById("B002").orElseThrow();
+        System.out.println("B002 disponueshem para huazimit: " + b002Before.isAvailable()); // pritet true
+
+        // 2. Huazo B002 per M002
+        Loan svcLoan = loanService.borrowItem("M002", "B002");
+        System.out.println("Huazim i ri, id=" + svcLoan.getId() + " dueDate=" + svcLoan.getDueDate());
+
+        Book b002After = bookDAO.findById("B002").orElseThrow();
+        System.out.println("B002 disponueshem pas huazimit: " + b002After.isAvailable()); // pritet false
+
+        // 3. Provo te huazosh B002 sërish (duhet deshtuar — s'eshte disponueshem)
+        try {
+            loanService.borrowItem("M001", "B002");
+            System.out.println("GABIM: duhej te hidhte exception!");
+        } catch (IllegalStateException e) {
+            System.out.println("Pritet: " + e.getMessage());
+        }
+
+        // 4. Ktheje B002
+        loanService.returnItem(svcLoan.getId());
+        Book b002AfterReturn = bookDAO.findById("B002").orElseThrow();
+        System.out.println("B002 disponueshem pas kthimit: " + b002AfterReturn.isAvailable()); // pritet true
     }
 
 }

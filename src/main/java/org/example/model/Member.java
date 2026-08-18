@@ -24,6 +24,13 @@ public class Member extends Person {
         return currentLoans.size() < MAX_LOANS && !isBlocked();
     }
 
+    // Getter publik per MAX_LOANS — LoanService e perdor per te kontrolluar
+    // huazimet aktive nga DB (loanDAO.findActiveByMember()), jo nga currentLoans
+    // (qe s'eshte i sinkronizuar me DB). Kjo shmang dyfishimin e konstantes 5 diku tjeter.
+    public static int getMaxLoans() {
+        return MAX_LOANS;
+    }
+
     public List<Loan> getCurrentLoans() { return currentLoans; }
     public double getUnpaidFees() { return unpaidFees; }
 
@@ -43,5 +50,3 @@ public class Member extends Person {
 
 
 }
-
-
