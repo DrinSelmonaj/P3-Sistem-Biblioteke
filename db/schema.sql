@@ -20,13 +20,15 @@ CREATE TABLE dvds (
     duration_minutes INT NOT NULL
 );
 
+
 CREATE TABLE persons (
-    id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    phone VARCHAR(20),
-    person_type VARCHAR(10) NOT NULL CHECK (person_type IN ('MEMBER', 'LIBRARIAN'))
-);
+                      id VARCHAR(50) PRIMARY KEY,
+                      name VARCHAR(255) NOT NULL,
+                      email VARCHAR(255) NOT NULL,
+                      phone VARCHAR(20),
+                      person_type VARCHAR(10) NOT NULL CHECK (person_type IN ('MEMBER', 'LIBRARIAN')),
+                      password_hash VARCHAR(60) NOT NULL
+             );
 
 CREATE TABLE members (
     person_id VARCHAR(50) PRIMARY KEY REFERENCES persons(id) ON DELETE CASCADE,

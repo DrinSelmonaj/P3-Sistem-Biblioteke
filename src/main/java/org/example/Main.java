@@ -13,6 +13,19 @@ public class Main {
         MemberDAO memberDAO = new MemberDAOImpl();
         MemberDAO memberDAO2 = new MemberDAOImpl();
 
+        LibrarianDAO librarianDAO = new LibrarianDAOImpl();
+        AuthService authService = new AuthService(memberDAO, librarianDAO);
+
+        var loginOk = authService.login("M001", "test123");
+        System.out.println("Login M001 me password korrekt: " + loginOk.isPresent()); // pritet true
+
+        var loginBad = authService.login("M001", "fjalekalim_gabuar");
+        System.out.println("Login M001 me password gabuar: " + loginBad.isPresent()); // pritet false
+
+        var loginNoId = authService.login("M999", "cfaredo");
+        System.out.println("Login me ID te panjohur: " + loginNoId.isPresent()); // pritet false
+
+
         MemberDAOImpl memberDAOImpl1 = new MemberDAOImpl();
         BookDAO bookDAO = new BookDAOImpl();
         DVDDAO dvdDAO = new DVDDAOImpl();
