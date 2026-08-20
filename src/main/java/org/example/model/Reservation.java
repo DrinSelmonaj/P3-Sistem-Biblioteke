@@ -9,12 +9,14 @@ public class Reservation {
     private LibraryItem item;
     private LocalDate reservationDate;
     private boolean fulfilled;
+    private boolean readyForPickup;
 
     public Reservation(Member member, LibraryItem item, LocalDate reservationDate) {
         this.member = member;
         this.item = item;
         this.reservationDate = reservationDate;
         this.fulfilled = false;
+        this.readyForPickup = false;
     }
 
     public void markFulfilled(){
@@ -24,6 +26,13 @@ public class Reservation {
     public boolean isFulfilled(){
         return fulfilled;
     }
+
+    // "Ready for pickup" = artikulli eshte kthyer dhe eshte mbajtur per kete anetar
+    // specifik (radha FIFO), por anetari ende s'e ka huazuar realisht.
+    // Dallon nga fulfilled: fulfilled do te thote anetari e ka huazuar tashme
+    // (rezervimi eshte "konsumuar" plotesisht).
+    public void markReadyForPickup() { this.readyForPickup = true; }
+    public boolean isReadyForPickup() { return readyForPickup; }
 
     public Integer getId() { return id; }
 

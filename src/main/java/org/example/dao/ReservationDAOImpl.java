@@ -26,7 +26,7 @@ public class ReservationDAOImpl implements ReservationDAO {
 
     @Override
     public Optional<Reservation> findById(int id) {
-        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled " +
+        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup " +
                 "FROM reservations WHERE id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
@@ -45,7 +45,7 @@ public class ReservationDAOImpl implements ReservationDAO {
 
     @Override
     public List<Reservation> findAll() {
-        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled FROM reservations";
+        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup FROM reservations";
 
         List<Reservation> reservations = new ArrayList<>();
 
@@ -87,7 +87,9 @@ public class ReservationDAOImpl implements ReservationDAO {
 
     @Override
     public void markFulfilled(int reservationId) {
-        String sql = "UPDATE reservations SET fulfilled = true WHERE id = ?";
+        // Rivendos ready_for_pickup=false — rezervimi eshte "konsumuar" plotesisht,
+        // s'ka kuptim te mbetet "gati per marrje" nese eshte tashme e permbushur.
+        String sql = "UPDATE reservations SET fulfilled = true, ready_for_pickup = false WHERE id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -99,10 +101,23 @@ public class ReservationDAOImpl implements ReservationDAO {
     }
 
     @Override
+    public void markReadyForPickup(int reservationId) {
+        String sql = "UPDATE reservations SET ready_for_pickup = true WHERE id = ?";
+
+        try (Connection conn = DBConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, reservationId);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate pergatitjes se rezervimit " + reservationId, e);
+        }
+    }
+
+    @Override
     public List<Reservation> findQueueForItem(String itemId) {
         // Radha FIFO "on the fly": vetem rezervimet e papermbushura per kete artikull,
         // renditur sipas reservation_date ASC. Elementi i pare i listes = radhes.
-        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled " +
+        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup " +
                 "FROM reservations WHERE item_id = ? AND fulfilled = false " +
                 "ORDER BY reservation_date ASC";
 
@@ -164,6 +179,9 @@ public class ReservationDAOImpl implements ReservationDAO {
 
         if (rs.getBoolean("fulfilled")) {
             reservation.markFulfilled();
+        }
+        if (rs.getBoolean("ready_for_pickup")) {
+            reservation.markReadyForPickup();
         }
 
         return reservation;

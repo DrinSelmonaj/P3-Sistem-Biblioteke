@@ -80,9 +80,8 @@ public class Main {
         fineDAO.markPaid(fetched.getId());
         System.out.println("markPaid() u thirr per id=" + fetched.getId());
 
-        // --- Test LoanService ---
-        ReservationDAO reservationDAO2 = new ReservationDAOImpl(memberDAO, bookDAO, dvdDAO);
-        LoanService loanService = new LoanService(memberDAO, loanDAO, bookDAO, dvdDAO, reservationDAO2);
+        // --- Test LoanService (transaksional, me FOR UPDATE) ---
+        LoanService loanService = new LoanService(memberDAO, bookDAO, dvdDAO);
 
         // 1. Kontrollo gjendjen fillestare te B002
         Book b002Before = bookDAO.findById("B002").orElseThrow();
@@ -107,6 +106,67 @@ public class Main {
         loanService.returnItem(svcLoan.getId());
         Book b002AfterReturn = bookDAO.findById("B002").orElseThrow();
         System.out.println("B002 disponueshem pas kthimit: " + b002AfterReturn.isAvailable()); // pritet true
+
+        // --- Test FIFO "ready for pickup" (LoanService rishkruar) ---
+        ReservationDAO reservationDAO3 = new ReservationDAOImpl(memberDAO, bookDAO, dvdDAO);
+
+        // 5. M001 huazon B002 (eshte e lire, sapo u kthye me lart)
+        Loan fifoLoan = loanService.borrowItem("M001", "B002");
+        System.out.println("FIFO test - M001 huazoi B002, loanId=" + fifoLoan.getId());
+
+        // 6. M002 rezervon B002 (eshte e zene nga M001)
+        Member m002 = memberDAO.findById("M002").orElseThrow();
+        Book b002ForReservation = bookDAO.findById("B002").orElseThrow();
+        Reservation fifoReservation = new Reservation(m002, b002ForReservation, LocalDate.now());
+        reservationDAO3.save(fifoReservation);
+        System.out.println("M002 rezervoi B002, reservationId=" + fifoReservation.getId());
+
+        // 7. M001 kthen B002 — pritet qe rezervimi i M002 te behet ready_for_pickup,
+        // dhe B002 te MBETET jo-disponueshem (mbahet per M002, jo per te tjeret)
+        loanService.returnItem(fifoLoan.getId());
+        Book b002AfterFifoReturn = bookDAO.findById("B002").orElseThrow();
+        System.out.println("B002 disponueshem pas kthimit (me radhe): " + b002AfterFifoReturn.isAvailable()); // pritet false
+
+        Reservation fifoReservationAfter = reservationDAO3.findById(fifoReservation.getId()).orElseThrow();
+        System.out.println("Rezervimi i M002, readyForPickup=" + fifoReservationAfter.isReadyForPickup()
+                + " fulfilled=" + fifoReservationAfter.isFulfilled()); // pritet true / false
+
+        // 8. M001 provon te rihuazoje B002 — duhet DESHTUAR (eshte mbajtur per M002)
+        try {
+            loanService.borrowItem("M001", "B002");
+            System.out.println("GABIM: duhej te hidhte exception!");
+        } catch (IllegalStateException e) {
+            System.out.println("Pritet: " + e.getMessage());
+        }
+
+        // 9. M002 huazon B002 — duhet te KALOJE, dhe rezervimi behet fulfilled
+        Loan fifoLoanM002 = loanService.borrowItem("M002", "B002");
+        System.out.println("M002 huazoi B002 me sukses, loanId=" + fifoLoanM002.getId());
+
+        Reservation fifoReservationFinal = reservationDAO3.findById(fifoReservation.getId()).orElseThrow();
+        System.out.println("Rezervimi i M002 pas huazimit, readyForPickup=" + fifoReservationFinal.isReadyForPickup()
+                + " fulfilled=" + fifoReservationFinal.isFulfilled()); // pritet false / true
+
+        // Pastrim — ktheje B002 qe DB te mbetet ne gjendje te qete
+        loanService.returnItem(fifoLoanM002.getId());
+
+        // --- Test FineService (sinkronizim me members.unpaid_fines) ---
+        FineService fineService = new FineService();
+
+        Loan overdueLoanForFineService = loanDAO.findById(1).orElseThrow();
+        Member m001Before = memberDAO.findById("M001").orElseThrow();
+        System.out.println("M001 unpaidFees para issue(): " + m001Before.getUnpaidFees());
+
+        Fine newFine = new Fine(overdueLoanForFineService, LocalDate.now());
+        fineService.issue(newFine);
+        System.out.println("Fine e re, id=" + newFine.getId() + " amount=" + newFine.getAmount());
+
+        Member m001After = memberDAO.findById("M001").orElseThrow();
+        System.out.println("M001 unpaidFees pas issue(): " + m001After.getUnpaidFees()); // pritet + amount
+
+        fineService.markPaid(newFine.getId());
+        Member m001AfterPaid = memberDAO.findById("M001").orElseThrow();
+        System.out.println("M001 unpaidFees pas markPaid(): " + m001AfterPaid.getUnpaidFees()); // pritet mbrapa te vlera fillestare
     }
 
 }
