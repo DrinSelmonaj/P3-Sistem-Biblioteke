@@ -4,182 +4,294 @@ import org.example.dao.*;
 import org.example.model.*;
 import org.example.service.*;
 
+import java.io.Console;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Scanner;
+import java.sql.SQLException;
 
 public class Main {
     public static void main(String[] args) {
-        // Dependency Injection manual - wiring i DAO-ve
+        // --- Wiring i DAO-ve ---
         MemberDAO memberDAO = new MemberDAOImpl();
-        MemberDAO memberDAO2 = new MemberDAOImpl();
-
-        LibrarianDAO librarianDAO = new LibrarianDAOImpl();
-        AuthService authService = new AuthService(memberDAO, librarianDAO);
-
-        var loginOk = authService.login("M001", "test123");
-        System.out.println("Login M001 me password korrekt: " + loginOk.isPresent()); // pritet true
-
-        var loginBad = authService.login("M001", "fjalekalim_gabuar");
-        System.out.println("Login M001 me password gabuar: " + loginBad.isPresent()); // pritet false
-
-        var loginNoId = authService.login("M999", "cfaredo");
-        System.out.println("Login me ID te panjohur: " + loginNoId.isPresent()); // pritet false
-
-
-        MemberDAOImpl memberDAOImpl1 = new MemberDAOImpl();
         BookDAO bookDAO = new BookDAOImpl();
         DVDDAO dvdDAO = new DVDDAOImpl();
         LoanDAO loanDAO = new LoanDAOImpl(memberDAO, bookDAO, dvdDAO);
-
-        // Testo save() - krijo nje huazim te ri
-        var member = memberDAO.findById("M001").orElseThrow();
-        var book = bookDAO.findById("B001").orElseThrow();
-
-        Loan newLoan = new Loan(member, book, LocalDate.now());
-        loanDAO.save(newLoan);
-        System.out.println("Huazimi u ruajt me sukses.");
-
-        // Testo findAll() - lexo te gjitha huazimet, verifiko resolveItem() dhe mapRowToLoan()
-        List<Loan> allLoans = loanDAO.findAll();
-        System.out.println("Numri i huazimeve: " + allLoans.size());
-
-        for (Loan loan : allLoans) {
-            System.out.println("Anetari: " + loan.getMember().getName() +
-                    " | Artikulli: " + loan.getItem().getTitle() +
-                    " | Afati: " + loan.getDueDate() +
-                    " | I vonuar: " + loan.isOverdue());
-        }
-        // --- Test ReservationDAO ---
-        ReservationDAO reservationDAO = new ReservationDAOImpl(memberDAO, bookDAO, dvdDAO);
-
-// Marrim entitetet reale nga DB, jo t'i krijojmë manualisht —
-// keshtu shmangim çdo mospërputhje me konstruktorin e Member/Book
-        Member member2 = memberDAO.findById("M002")
-                .orElseThrow(() -> new RuntimeException("M002 nuk u gjet"));
-        LibraryItem book1 = bookDAO.findById("B001")
-                .orElseThrow(() -> new RuntimeException("B001 nuk u gjet"));
-
-        Reservation res = new Reservation(member2, book1, LocalDate.now());
-        System.out.println("Para save(), id: " + res.getId()); // pritet null
-
-        reservationDAO.save(res);
-        System.out.println("Pas save(), id: " + res.getId()); // pritet nje numer, jo null
-
-        List<Reservation> queue = reservationDAO.findQueueForItem("B001");
-        System.out.println("Radha per B001, madhesia: " + queue.size());
-        for (Reservation r : queue) {
-            System.out.println("  id=" + r.getId() + " member=" + r.getMember().getId()
-                    + " date=" + r.getReservationDate() + " fulfilled=" + r.isFulfilled());
-        }
-
-        // --- Test FineDAO ---
         FineDAO fineDAO = new FineDAOImpl(loanDAO);
+        LibrarianDAO librarianDAO = new LibrarianDAOImpl();
 
-        Loan overdueLoan = loanDAO.findById(1)
-                .orElseThrow(() -> new RuntimeException("Loan #1 nuk u gjet"));
-        System.out.println("Dite vonese: " + overdueLoan.getDaysOverdue()); // pritet 10
-
-        Fine fine = new Fine(overdueLoan, LocalDate.now());
-        System.out.println("Shuma e llogaritur: " + fine.getAmount()); // pritet 5.0
-
-        fineDAO.save(fine);
-        System.out.println("Pas save(), id: " + fine.getId()); // pritet numer, jo null
-
-        Fine fetched = fineDAO.findByLoanId(1)
-                .orElseThrow(() -> new RuntimeException("Fine per loan 1 nuk u gjet"));
-        System.out.println("Fine rimarrur nga DB, amount=" + fetched.getAmount()
-                + " paid=" + fetched.isPaid());
-
-        fineDAO.markPaid(fetched.getId());
-        System.out.println("markPaid() u thirr per id=" + fetched.getId());
-
-        // --- Test LoanService (transaksional, me FOR UPDATE) ---
+        // --- Wiring i Service-ve ---
+        AuthService authService = new AuthService(memberDAO, librarianDAO);
         LoanService loanService = new LoanService(memberDAO, bookDAO, dvdDAO);
+        FineService fineService = new FineService(fineDAO);
 
-        // 1. Kontrollo gjendjen fillestare te B002
-        Book b002Before = bookDAO.findById("B002").orElseThrow();
-        System.out.println("B002 disponueshem para huazimit: " + b002Before.isAvailable()); // pritet true
+        Scanner scanner = new Scanner(System.in);
+        // System.console() eshte i disponueshem vetem ne terminal te vertete
+        // (Terminal.app) — kur xhirohet nga IntelliJ Run panel kthen null,
+        // sepse IntelliJ s'ofron nje TTY te vertete. Perdoret per te fshehur
+        // fjalekalimin me **** vetem kur eshte e mundur teknikisht.
+        Console console = System.console();
 
-        // 2. Huazo B002 per M002
-        Loan svcLoan = loanService.borrowItem("M002", "B002");
-        System.out.println("Huazim i ri, id=" + svcLoan.getId() + " dueDate=" + svcLoan.getDueDate());
+        System.out.println("=== Miresevini ne Sistemin e Bibliotekes ===\n");
 
-        Book b002After = bookDAO.findById("B002").orElseThrow();
-        System.out.println("B002 disponueshem pas huazimit: " + b002After.isAvailable()); // pritet false
+        // --- Meny hyrese — Login ose Sign Up, perseritet derisa perdoruesi te kyçet ---
+        Person loggedInUser = null;
+        while (loggedInUser == null) {
+            System.out.println("Jeni anetar? Shtypni 1 per Login.");
+            System.out.println("Deshironi te regjistroheni? Shtypni 2 per Sign Up.");
+            System.out.print("Zgjedh: ");
+            String entryChoice = scanner.nextLine().trim();
 
-        // 3. Provo te huazosh B002 sërish (duhet deshtuar — s'eshte disponueshem)
-        try {
-            loanService.borrowItem("M001", "B002");
-            System.out.println("GABIM: duhej te hidhte exception!");
-        } catch (IllegalStateException e) {
-            System.out.println("Pritet: " + e.getMessage());
+            if (entryChoice.equals("1")) {
+                System.out.print("Username: ");
+                String id = scanner.nextLine().trim();
+                String password = readPassword(scanner, console);
+
+                var result = authService.login(id, password);
+                if (result.isPresent()) {
+                    loggedInUser = result.get();
+                    System.out.println("Mireserdhe, " + loggedInUser.getName() + "!");
+                } else {
+                    System.out.println("Username ose fjalekalim i gabuar. Provo perseri.\n");
+                }
+
+            } else if (entryChoice.equals("2")) {
+                loggedInUser = signUp(scanner, console, memberDAO, authService);
+
+            } else {
+                System.out.println("Zgjedhje e panjohur. Shtyp 1 ose 2.\n");
+            }
         }
 
-        // 4. Ktheje B002
-        loanService.returnItem(svcLoan.getId());
-        Book b002AfterReturn = bookDAO.findById("B002").orElseThrow();
-        System.out.println("B002 disponueshem pas kthimit: " + b002AfterReturn.isAvailable()); // pritet true
-
-        // --- Test FIFO "ready for pickup" (LoanService rishkruar) ---
-        ReservationDAO reservationDAO3 = new ReservationDAOImpl(memberDAO, bookDAO, dvdDAO);
-
-        // 5. M001 huazon B002 (eshte e lire, sapo u kthye me lart)
-        Loan fifoLoan = loanService.borrowItem("M001", "B002");
-        System.out.println("FIFO test - M001 huazoi B002, loanId=" + fifoLoan.getId());
-
-        // 6. M002 rezervon B002 (eshte e zene nga M001)
-        Member m002 = memberDAO.findById("M002").orElseThrow();
-        Book b002ForReservation = bookDAO.findById("B002").orElseThrow();
-        Reservation fifoReservation = new Reservation(m002, b002ForReservation, LocalDate.now());
-        reservationDAO3.save(fifoReservation);
-        System.out.println("M002 rezervoi B002, reservationId=" + fifoReservation.getId());
-
-        // 7. M001 kthen B002 — pritet qe rezervimi i M002 te behet ready_for_pickup,
-        // dhe B002 te MBETET jo-disponueshem (mbahet per M002, jo per te tjeret)
-        loanService.returnItem(fifoLoan.getId());
-        Book b002AfterFifoReturn = bookDAO.findById("B002").orElseThrow();
-        System.out.println("B002 disponueshem pas kthimit (me radhe): " + b002AfterFifoReturn.isAvailable()); // pritet false
-
-        Reservation fifoReservationAfter = reservationDAO3.findById(fifoReservation.getId()).orElseThrow();
-        System.out.println("Rezervimi i M002, readyForPickup=" + fifoReservationAfter.isReadyForPickup()
-                + " fulfilled=" + fifoReservationAfter.isFulfilled()); // pritet true / false
-
-        // 8. M001 provon te rihuazoje B002 — duhet DESHTUAR (eshte mbajtur per M002)
-        try {
-            loanService.borrowItem("M001", "B002");
-            System.out.println("GABIM: duhej te hidhte exception!");
-        } catch (IllegalStateException e) {
-            System.out.println("Pritet: " + e.getMessage());
+        // --- Dallimi i menuse sipas rolit — perdor te njejten metode polimorfike
+        // qe perdoret per autorizim ne LoanService/FineService (canManageInventory()).
+        if (loggedInUser.canManageInventory()) {
+            librarianMenu(scanner, loggedInUser, loanService, fineService, loanDAO, bookDAO, dvdDAO);
+        } else {
+            memberMenu(scanner, loggedInUser, loanService, fineService, loanDAO, bookDAO, dvdDAO);
         }
 
-        // 9. M002 huazon B002 — duhet te KALOJE, dhe rezervimi behet fulfilled
-        Loan fifoLoanM002 = loanService.borrowItem("M002", "B002");
-        System.out.println("M002 huazoi B002 me sukses, loanId=" + fifoLoanM002.getId());
-
-        Reservation fifoReservationFinal = reservationDAO3.findById(fifoReservation.getId()).orElseThrow();
-        System.out.println("Rezervimi i M002 pas huazimit, readyForPickup=" + fifoReservationFinal.isReadyForPickup()
-                + " fulfilled=" + fifoReservationFinal.isFulfilled()); // pritet false / true
-
-        // Pastrim — ktheje B002 qe DB te mbetet ne gjendje te qete
-        loanService.returnItem(fifoLoanM002.getId());
-
-        // --- Test FineService (sinkronizim me members.unpaid_fines) ---
-        FineService fineService = new FineService();
-
-        Loan overdueLoanForFineService = loanDAO.findById(1).orElseThrow();
-        Member m001Before = memberDAO.findById("M001").orElseThrow();
-        System.out.println("M001 unpaidFees para issue(): " + m001Before.getUnpaidFees());
-
-        Fine newFine = new Fine(overdueLoanForFineService, LocalDate.now());
-        fineService.issue(newFine);
-        System.out.println("Fine e re, id=" + newFine.getId() + " amount=" + newFine.getAmount());
-
-        Member m001After = memberDAO.findById("M001").orElseThrow();
-        System.out.println("M001 unpaidFees pas issue(): " + m001After.getUnpaidFees()); // pritet + amount
-
-        fineService.markPaid(newFine.getId());
-        Member m001AfterPaid = memberDAO.findById("M001").orElseThrow();
-        System.out.println("M001 unpaidFees pas markPaid(): " + m001AfterPaid.getUnpaidFees()); // pritet mbrapa te vlera fillestare
+        scanner.close();
+        System.out.println("Mirupafshim!");
     }
 
+    // Fsheh fjalekalimin me **** nese xhirohet ne terminal te vertete (console != null).
+    // Ne IntelliJ Run panel (console == null) bie mbrapa te Scanner normal, me
+    // nje shenim qe fjalekalimi shfaqet plain — kufizim i JVM-se, jo diçka qe
+    // mund ta anashkalojme me kod.
+    private static String readPassword(Scanner scanner, Console console) {
+        if (console != null) {
+            char[] passwordChars = console.readPassword("Fjalekalimi: ");
+            return new String(passwordChars);
+        } else {
+            System.out.print("Fjalekalimi (dukshem - xhiro nga Terminal.app per fshehje): ");
+            return scanner.nextLine().trim();
+        }
+    }
+
+    // Regjistrim i ri per Member — vetem Member mund te regjistrohet vetvetiu;
+    // Librarian mbetet i krijuar nga stafi (jashte ketij flow-i publik), sepse
+    // eshte llogari pune, jo diçka qe cilido duhet te mund ta krijoje vetem.
+    // Kthen null nese regjistrimi deshton (p.sh. ID e zene tashme), jo exception —
+    // qe loop-i hyres thjesht ta ripyese perdoruesin, njesoj si login i gabuar.
+    private static Person signUp(Scanner scanner, Console console, MemberDAO memberDAO, AuthService authService) {
+        System.out.println("\n--- Regjistrim Anetari i Ri ---");
+        System.out.print("Username (do te perdoret per login): ");
+        String id = scanner.nextLine().trim();
+        System.out.print("Emri: ");
+        String name = scanner.nextLine().trim();
+        System.out.print("Email: ");
+        String email = scanner.nextLine().trim();
+        System.out.print("Telefoni: ");
+        String phone = scanner.nextLine().trim();
+        String password = readPassword(scanner, console);
+
+        try {
+            Member newMember = new Member(id, name, email, phone);
+            memberDAO.save(newMember);
+            authService.setPassword(id, password);
+            System.out.println("Regjistrimi u krye me sukses. Mireserdhe, " + name + "!\n");
+            return newMember;
+        } catch (RuntimeException e) {
+            if (isDuplicateUsername(e)) {
+                System.out.println("Ky username eshte i zene tashme. Zgjidh nje tjeter.\n");
+            } else {
+                System.out.println("Gabim gjate regjistrimit: " + e.getMessage() + "\n");
+            }
+            return null;
+        }
+    }
+
+    // PostgreSQL kthen SQLState "23505" specifikisht per shkelje te PRIMARY
+    // KEY/UNIQUE — e dallojme nga gabime te tjera (p.sh. DB e paarritshme)
+    // qe te japim mesazh te qarte vetem per rastin real: username i zene.
+    private static boolean isDuplicateUsername(Throwable e) {
+        Throwable cause = e.getCause();
+        return cause instanceof SQLException sqlEx && "23505".equals(sqlEx.getSQLState());
+    }
+
+
+    // Listohen artikujt e disponueshem (ID + titull) — pa kete, anetari do
+    // te duhej te dinte perpara ID-te e librave qe s'i ka pare kurre, gje
+    // qe s'ka logjike per nje perdorues real.
+    private static void printAvailableCatalog(BookDAO bookDAO, DVDDAO dvdDAO) {
+        System.out.println("--- Artikuj te disponueshem ---");
+        List<Book> books = bookDAO.findAll();
+        List<DVD> dvds = dvdDAO.findAll();
+
+        boolean anyAvailable = false;
+        for (Book book : books) {
+            if (book.isAvailable()) {
+                System.out.println("  " + book.getId() + " — " + book.getTitle() + " (Liber)");
+                anyAvailable = true;
+            }
+        }
+        for (DVD dvd : dvds) {
+            if (dvd.isAvailable()) {
+                System.out.println("  " + dvd.getId() + " — " + dvd.getTitle() + " (DVD)");
+                anyAvailable = true;
+            }
+        }
+        if (!anyAvailable) {
+            System.out.println("  (asnje artikull i disponueshem momentalisht)");
+        }
+    }
+
+    private static void memberMenu(Scanner scanner, Person actor, LoanService loanService,
+                                   FineService fineService, LoanDAO loanDAO,
+                                   BookDAO bookDAO, DVDDAO dvdDAO) {
+        boolean running = true;
+        while (running) {
+            System.out.println("\n--- Menuja e Anetarit (" + actor.getName() + ") ---");
+            System.out.println("1. Shiko huazimet e mia aktive");
+            System.out.println("2. Huazo artikull");
+            System.out.println("3. Kthe artikull");
+            System.out.println("4. Shiko gjobat e mia");
+            System.out.println("5. Paguaj nje gjobe");
+            System.out.println("6. Dil");
+            System.out.print("Zgjedh: ");
+            String choice = scanner.nextLine().trim();
+
+            try {
+                if (choice.equals("1")) {
+                    List<Loan> loans = loanDAO.findActiveByMember(actor.getId());
+                    if (loans.isEmpty()) {
+                        System.out.println("S'ke huazime aktive.");
+                    } else {
+                        for (Loan loan : loans) {
+                            System.out.println("  #" + loan.getId() + " " + loan.getItem().getTitle()
+                                    + " | Afati: " + loan.getDueDate()
+                                    + " | I vonuar: " + loan.isOverdue());
+                        }
+                    }
+
+                } else if (choice.equals("2")) {
+                    printAvailableCatalog(bookDAO, dvdDAO);
+                    System.out.print("ID e artikullit: ");
+                    String itemId = scanner.nextLine().trim();
+                    Loan loan = loanService.borrowItem(actor, actor.getId(), itemId);
+                    System.out.println("Huazuar me sukses. Afati: " + loan.getDueDate());
+
+                } else if (choice.equals("3")) {
+                    System.out.print("ID e huazimit: ");
+                    int loanId = Integer.parseInt(scanner.nextLine().trim());
+                    loanService.returnItem(actor, loanId);
+                    System.out.println("Artikulli u kthye me sukses.");
+
+                } else if (choice.equals("4")) {
+                    List<Fine> fines = fineService.getFinesForMember(actor, actor.getId());
+                    if (fines.isEmpty()) {
+                        System.out.println("S'ke gjoba.");
+                    } else {
+                        for (Fine fine : fines) {
+                            String statusi = fine.isPaid() ? "Paguar me " + fine.getPaidDate() : "E papaguar";
+                            System.out.println("  #" + fine.getId() + " Shuma: " + fine.getAmount()
+                                    + " | " + statusi);
+                        }
+                    }
+
+                } else if (choice.equals("5")) {
+                    System.out.print("ID e gjobes qe do paguash: ");
+                    int fineId = Integer.parseInt(scanner.nextLine().trim());
+                    fineService.payFine(actor, fineId);
+                    System.out.println("Gjoba u pagua me sukses.");
+
+                } else if (choice.equals("6")) {
+                    running = false;
+
+                } else {
+                    System.out.println("Zgjedhje e panjohur.");
+                }
+            } catch (NumberFormatException e) {
+                System.out.println("Gabim: duhej nje numer.");
+            } catch (Exception e) {
+                System.out.println("Gabim: " + e.getMessage());
+            }
+        }
+    }
+
+    private static void librarianMenu(Scanner scanner, Person actor, LoanService loanService,
+                                      FineService fineService, LoanDAO loanDAO,
+                                      BookDAO bookDAO, DVDDAO dvdDAO) {
+        boolean running = true;
+        while (running) {
+            System.out.println("\n--- Menuja e Librarianit (" + actor.getName() + ") ---");
+            System.out.println("1. Regjistro huazim per nje anetar");
+            System.out.println("2. Regjistro kthim");
+            System.out.println("3. Krijo gjobe per nje huazim te vonuar");
+            System.out.println("4. Shiko historine e plote te pagesave");
+            System.out.println("5. Dil");
+            System.out.print("Zgjedh: ");
+            String choice = scanner.nextLine().trim();
+
+            try {
+                if (choice.equals("1")) {
+                    System.out.print("ID e anetarit: ");
+                    String memberId = scanner.nextLine().trim();
+                    printAvailableCatalog(bookDAO, dvdDAO);
+                    System.out.print("ID e artikullit: ");
+                    String itemId = scanner.nextLine().trim();
+                    Loan loan = loanService.borrowItem(actor, memberId, itemId);
+                    System.out.println("Huazim i regjistruar, id=" + loan.getId() + " afati=" + loan.getDueDate());
+
+                } else if (choice.equals("2")) {
+                    System.out.print("ID e huazimit: ");
+                    int loanId = Integer.parseInt(scanner.nextLine().trim());
+                    loanService.returnItem(actor, loanId);
+                    System.out.println("Kthimi u regjistrua me sukses.");
+
+                } else if (choice.equals("3")) {
+                    System.out.print("ID e huazimit te vonuar: ");
+                    int loanId = Integer.parseInt(scanner.nextLine().trim());
+                    Loan loan = loanDAO.findById(loanId)
+                            .orElseThrow(() -> new IllegalArgumentException("Huazimi nuk u gjet."));
+                    Fine fine = new Fine(loan, LocalDate.now());
+                    fineService.issue(actor, fine);
+                    System.out.println("Gjoba u krijua, id=" + fine.getId() + " shuma=" + fine.getAmount());
+
+                } else if (choice.equals("4")) {
+                    List<Fine> allFines = fineService.getAllPayments(actor);
+                    if (allFines.isEmpty()) {
+                        System.out.println("S'ka gjoba ne sistem.");
+                    } else {
+                        for (Fine fine : allFines) {
+                            String statusi = fine.isPaid() ? "Paguar me " + fine.getPaidDate() : "E papaguar";
+                            System.out.println("  #" + fine.getId() + " Anetari: " + fine.getLoan().getMember().getId()
+                                    + " | Shuma: " + fine.getAmount() + " | " + statusi);
+                        }
+                    }
+
+                } else if (choice.equals("5")) {
+                    running = false;
+
+                } else {
+                    System.out.println("Zgjedhje e panjohur.");
+                }
+            } catch (NumberFormatException e) {
+                System.out.println("Gabim: duhej nje numer.");
+            } catch (Exception e) {
+                System.out.println("Gabim: " + e.getMessage());
+            }
+        }
+    }
 }

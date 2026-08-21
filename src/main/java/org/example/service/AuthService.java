@@ -46,9 +46,16 @@ public class AuthService {
 
             // BCrypt.checkpw() rillogarit hash-in me te njejtin salt te ruajtur brenda
             // storedHash dhe krahason — kurre s'krahasohen fjalekalime plain text
-            if(!BCrypt.checkpw(rawPassword, storedHash)){
-                return Optional.empty();//fjalekalimi eshte gabuar
-
+            try {
+                if (!BCrypt.checkpw(rawPassword, storedHash)) {
+                    return Optional.empty(); // fjalekalim i gabuar
+                }
+            } catch (IllegalArgumentException e) {
+                // storedHash s'eshte format i vlefshem BCrypt — ndodh kur nje Person
+                // eshte krijuar por password_hash i tij eshte ende placeholder
+                // (fjalekalimi real s'eshte vendosur ende). Trajtohet si kredenciale
+                // te gabuara, jo si crash — nga jashte duket njesoj (login deshtoi).
+                return Optional.empty();
             }
             // Resolve ne entitetin konkret sipas person_type — i njejti pattern qe
             // LoanDAOImpl perdor per te dalluar Book/DVD.
@@ -67,6 +74,24 @@ public class AuthService {
     // fillestar i te dhenave test, ose nje krijim i ri anetari nga Librarian).
     public static String hashPassword(String rawPassword) {
         return BCrypt.hashpw(rawPassword, BCrypt.gensalt());
+    }
+
+    // Vendos fjalekalimin real per nje Person qe tashme ekziston ne DB (i krijuar
+    // me placeholder nga MemberDAO/LibrarianDAO.save()). I domosdoshem per flow-in
+    // e sign-up: save() krijon rreshtin, kjo metode e ben te kycshem realisht.
+    public void setPassword(String personId, String rawPassword) {
+        String hash = hashPassword(rawPassword);
+        try (Connection connection = DBConnection.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "UPDATE persons SET password_hash = ? WHERE id = ?")) {
+            statement.setString(1, hash);
+            statement.setString(2, personId);
+            if (statement.executeUpdate() != 1) {
+                throw new IllegalArgumentException("Personi me ID " + personId + " nuk u gjet.");
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate vendosjes se fjalekalimit", e);
+        }
     }
 
 

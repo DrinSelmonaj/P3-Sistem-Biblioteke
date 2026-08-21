@@ -55,8 +55,11 @@ public class MemberDAOImpl implements MemberDAO {
 
     @Override
     public void save(Member member) {
-        String insertPerson = "INSERT INTO persons (id, name, email, phone, person_type) " +
-                "VALUES (?, ?, ?, ?, 'MEMBER')";
+        // password_hash merr nje placeholder te pavlefshem si hash real BCrypt —
+// personi krijohet, por s'mund te kycet derisa dikush (AuthService.hashPassword +
+// UPDATE) t'i vendosi nje fjalekalim real. Njesoj si migrimi fillestar i M001/M002.
+        String insertPerson = "INSERT INTO persons (id, name, email, phone, person_type, password_hash) " +
+                "VALUES (?, ?, ?, ?, 'MEMBER', '$2a$10$PLACEHOLDER_TEMP_HASH_NOT_REAL_YET')";
         String insertMember = "INSERT INTO members (person_id, unpaid_fines) VALUES (?, ?)";
 
         try (Connection conn = DBConnection.getInstance().getConnection()) {

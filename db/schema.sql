@@ -58,9 +58,10 @@ CREATE TABLE reservations (
 );
 
 CREATE TABLE fines (
-    id SERIAL PRIMARY KEY,
-    loan_id INT NOT NULL REFERENCES loans(id),
-    amount NUMERIC(10,2) NOT NULL,
-    issued_date DATE NOT NULL,
-    paid BOOLEAN NOT NULL DEFAULT false
+                       id SERIAL PRIMARY KEY,
+                       loan_id INT NOT NULL REFERENCES loans(id),
+                       amount NUMERIC(10,2) NOT NULL,
+                       issued_date DATE NOT NULL,
+                       paid BOOLEAN NOT NULL DEFAULT false,
+                       paid_date TIMESTAMP
 );

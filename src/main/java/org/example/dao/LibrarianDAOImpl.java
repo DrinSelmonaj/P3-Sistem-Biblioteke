@@ -56,8 +56,13 @@ public class LibrarianDAOImpl implements LibrarianDAO {
 
     @Override
     public void save(Librarian librarian) {
-        String insertPerson = "INSERT INTO persons (id, name, email, phone, person_type) " +
-                "VALUES (?, ?, ?, ?, 'LIBRARIAN')";
+        // password_hash merr nje placeholder te pavlefshem si hash real BCrypt —
+// personi krijohet, por s'mund te kycet derisa dikush (AuthService.hashPassword +
+// UPDATE) t'i vendosi nje fjalekalim real. Njesoj si migrimi fillestar i M001/M002.
+        String insertPerson = "INSERT INTO persons (id, name, email, phone, person_type, password_hash) " +
+                "VALUES (?, ?, ?, ?, 'LIBRARIAN', '$2a$10$PLACEHOLDER_TEMP_HASH_NOT_REAL_YET')";
+
+
         String insertLibrarian = "INSERT INTO librarians (person_id, employee_code) VALUES (?, ?)";
         try (Connection conn = DBConnection.getInstance().getConnection()) {
             conn.setAutoCommit(false);

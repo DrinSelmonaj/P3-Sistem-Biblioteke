@@ -22,7 +22,7 @@ public class FineDAOImpl implements FineDAO {
 
     @Override
     public Optional<Fine> findById(int id) {
-        String sql = "SELECT id, loan_id, amount, issued_date, paid FROM fines WHERE id = ?";
+        String sql = "SELECT id, loan_id, amount, issued_date, paid, paid_date FROM fines WHERE id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -40,7 +40,7 @@ public class FineDAOImpl implements FineDAO {
 
     @Override
     public List<Fine> findAll() {
-        String sql = "SELECT id, loan_id, amount, issued_date, paid FROM fines";
+        String sql = "SELECT id, loan_id, amount, issued_date, paid, paid_date FROM fines";
 
         List<Fine> fines = new ArrayList<>();
 
@@ -87,7 +87,7 @@ public class FineDAOImpl implements FineDAO {
 
     @Override
     public void markPaid(int fineId) {
-        String sql = "UPDATE fines SET paid = true WHERE id = ?";
+        String sql = "UPDATE fines SET paid = true, paid_date = NOW() WHERE id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -100,7 +100,7 @@ public class FineDAOImpl implements FineDAO {
 
     @Override
     public Optional<Fine> findByLoanId(int loanId) {
-        String sql = "SELECT id, loan_id, amount, issued_date, paid FROM fines WHERE loan_id = ?";
+        String sql = "SELECT id, loan_id, amount, issued_date, paid, paid_date FROM fines WHERE loan_id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -114,6 +114,28 @@ public class FineDAOImpl implements FineDAO {
         } catch (SQLException e) {
             throw new RuntimeException("Gabim gjate kerkimit te gjobes per loan " + loanId, e);
         }
+    }
+    @Override
+    public List<Fine> findByMemberId(String memberId) {
+        // JOIN me loans per te filtruar sipas anetarit — fines s'e ka vete member_id.
+        String sql = "SELECT f.id, f.loan_id, f.amount, f.issued_date, f.paid, f.paid_date " +
+                "FROM fines f JOIN loans l ON f.loan_id = l.id " +
+                "WHERE l.member_id = ? ORDER BY f.issued_date DESC";
+
+        List<Fine> fines = new ArrayList<>();
+
+        try (Connection conn = DBConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, memberId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    fines.add(mapRowToFine(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate kerkimit te gjobave per anetarin " + memberId, e);
+        }
+        return fines;
     }
 
     private Fine mapRowToFine(ResultSet rs) throws SQLException {
@@ -132,8 +154,10 @@ public class FineDAOImpl implements FineDAO {
         // E mbishkruajme me vleren reale te ruajtur, sepse ajo eshte "e verteta historike".
         fine.setAmount(rs.getDouble("amount"));
 
-        if (rs.getBoolean("paid")) {
-            fine.markPaid();
+        fine.setPaid(rs.getBoolean("paid"));
+        Timestamp paidTs = rs.getTimestamp("paid_date");
+        if (paidTs != null) {
+            fine.setPaidDate(paidTs.toLocalDateTime());
         }
 
         return fine;

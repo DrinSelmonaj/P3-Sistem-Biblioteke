@@ -20,4 +20,8 @@ public interface FineDAO {
     // I domosdoshem per FineService: para se te krijohet nje gjobe e re per nje loan,
     // duhet kontrolluar nese ekziston tashme nje (shmang gjoba te dyfishta per te njejtin huazim).
     Optional<Fine> findByLoanId(int loanId);
+
+    // I domosdoshem per "borgjet e mia" / "historia ime" — Member sheh vetem gjobat
+// e veta, Librarian mund t'i shohe te te gjithe anetareve.
+    List<Fine> findByMemberId(String memberId);
 }

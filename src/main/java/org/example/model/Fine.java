@@ -1,6 +1,7 @@
 package org.example.model;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class Fine {
     private static final double DAILY_RATE = 0.50;
@@ -12,7 +13,7 @@ public class Fine {
     private double amount;
     private LocalDate issuedDate;
     private boolean paid;
-
+    private LocalDateTime paidDate;//null deri te paguhet gjoba
 
     public Fine(Loan loan, LocalDate issuedDate) {
         this.loan = loan;
@@ -28,10 +29,23 @@ public class Fine {
 
     public void markPaid() {
         this.paid = true;
+        this.paidDate = LocalDateTime.now();
     }
+
     public boolean isPaid() { return paid; }
     public double getAmount() { return amount; }
     public LocalDate getIssuedDate() { return issuedDate; }
+    public LocalDateTime getPaidDate() { return paidDate; }
+
+    // Vetem DAO-t duhet ta thirrasin — perdoret ne mapRowToFine() per te lexuar
+// paid_date nga DB ashtu sic eshte ruajtur, jo ta rillogarise.
+    public void setPaidDate(LocalDateTime paidDate) { this.paidDate = paidDate; }
+
+    // Vetem DAO-t duhet ta thirrasin — perdoret ne mapRowToFine() per te lexuar
+// flamurin 'paid' ashtu sic eshte ne DB, pa e shoqeruar me markPaid() qe do
+// vendoste paidDate=now() gabimisht ne vend te vleres historike te ruajtur.
+
+    public void setPaid(boolean paid) { this.paid = paid; }
     public Loan getLoan() { return loan; }
 
     public Integer getId() { return id; }

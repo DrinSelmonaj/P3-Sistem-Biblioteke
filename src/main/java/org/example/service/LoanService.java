@@ -6,6 +6,7 @@ import org.example.dao.MemberDAO;
 import org.example.model.LibraryItem;
 import org.example.model.Loan;
 import org.example.model.Member;
+import org.example.model.Person;
 import org.example.util.DBConnection;
 
 import java.sql.Connection;
@@ -15,18 +16,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 
-// Koordinon ndryshimet e gjendjes se huazimit brenda 1 transaksioni DB te vetem.
-//
-// RISHKRIM (nga versioni fillestar me DAO-DAO te veçanta): borrowItem()/returnItem()
-// perdorin tani SQL direkt brenda nje Connection te perbashket, me SELECT ... FOR UPDATE
-// per te bllokuar rreshtat perkates (library_items, reservations, members) sa kohe
-// zgjat transaksioni. Kjo eliminon rrezikun e gjendjes se pjesshme qe kishim shenuar
-// si TODO ne versionin e meparshem (p.sh. loan i ruajtur, por item ende "available").
-//
-// Shenim: kjo klase QELLIMISHT s'perdor LoanDAO/ReservationDAO — te gjitha query-te
-// jane brenda te njejtit transaksion, dhe DAO-t ekzistuese hapin Connection te vetin
-// (do te thyente atomicitetin). memberDAO/bookDAO/dvdDAO perdoren vetem per lexime
-// jashte transaksionit (rezolvim Member/LibraryItem per objektin Loan te kthyer).
 public class LoanService {
 
     private final MemberDAO memberDAO;
@@ -39,7 +28,13 @@ public class LoanService {
         this.dvdDAO = dvdDAO;
     }
 
-    public Loan borrowItem(String memberId, String itemId) {
+    // Autorizim: Member mund te huazoje VETEM per veten; Librarian per cilindo
+    // (p.sh. anetari vjen fizikisht ne sportel, librarian regjistron huazimin).
+    public Loan borrowItem(Person actor, String memberId, String itemId) {
+        if (!actor.canManageInventory() && !actor.getId().equals(memberId)) {
+            throw new SecurityException("Mund te huazosh vetem per vete.");
+        }
+
         Member member = memberDAO.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("Anetari me ID " + memberId + " nuk u gjet."));
         LibraryItem item = resolveItem(itemId);
@@ -48,9 +43,6 @@ public class LoanService {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
             try {
-                // FOR UPDATE bllokon rreshtin sa kohe zgjat transaksioni — nese 2 anetare
-                // provojne te huazojne te njejtin artikull njekohesisht, i dyti pret
-                // derisa i pari te commit/rollback-oje, duke shmangur race condition.
                 boolean available = lockAndReadAvailability(connection, itemId);
                 Integer readyReservationId = lockReadyReservation(connection, itemId, memberId);
                 validateMemberCanBorrow(connection, memberId);
@@ -75,8 +67,6 @@ public class LoanService {
                 updateAvailability(connection, itemId, false);
 
                 if (readyReservationId != null) {
-                    // Anetari e ka huazuar artikullin qe ishte mbajtur per te — rezervimi
-                    // "konsumohet" plotesisht (fulfilled=true, ready_for_pickup=false).
                     try (PreparedStatement statement = connection.prepareStatement(
                             "UPDATE reservations SET fulfilled = true, ready_for_pickup = false WHERE id = ?")) {
                         statement.setInt(1, readyReservationId);
@@ -99,11 +89,18 @@ public class LoanService {
         }
     }
 
-    public void returnItem(int loanId) {
+    // Autorizim: Member mund te kthej VETEM huazimet e veta; Librarian cilendo.
+    public void returnItem(Person actor, int loanId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
             try {
-                String itemId = lockActiveLoanAndGetItem(connection, loanId);
+                ActiveLoanInfo loanInfo = lockActiveLoanAndGetItem(connection, loanId);
+
+                if (!actor.canManageInventory() && !actor.getId().equals(loanInfo.memberId())) {
+                    throw new SecurityException("Mund te kthesh vetem huazimet e tua.");
+                }
+
+                String itemId = loanInfo.itemId();
 
                 try (PreparedStatement statement = connection.prepareStatement(
                         "UPDATE loans SET return_date = ? WHERE id = ?")) {
@@ -112,16 +109,11 @@ public class LoanService {
                     statement.executeUpdate();
                 }
 
-                // FIFO: radha percaktohet nga reservation_date ASC, njesoj si
-                // ReservationDAO.findQueueForItem() — por ketu brenda te njejtit
-                // transaksion, me FOR UPDATE per te bllokuar rreshtin e zgjedhur.
                 Integer nextReservation = lockNextWaitingReservation(connection, itemId);
 
                 if (nextReservation == null) {
                     updateAvailability(connection, itemId, true);
                 } else {
-                    // Artikulli mbahet per anetarin e radhes — s'behet automatikisht
-                    // "available" per te tjeret, vetem "ready_for_pickup" per te.
                     try (PreparedStatement statement = connection.prepareStatement(
                             "UPDATE reservations SET ready_for_pickup = true WHERE id = ?")) {
                         statement.setInt(1, nextReservation);
@@ -153,10 +145,6 @@ public class LoanService {
         }
     }
 
-    // Kontrollon nese ka nje rezervim "ready_for_pickup" per kete artikull.
-    // Nese po, dhe eshte per NJE ANETAR TJETER — hidhet exception (mbrojtje FIFO,
-    // dikush s'mund te "kapercej" radhen). Nese eshte per vete anetarin qe po huazon,
-    // kthehet id-ja e rezervimit qe do te "konsumohet" ne borrowItem().
     private Integer lockReadyReservation(Connection connection, String itemId, String memberId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, member_id FROM reservations WHERE item_id = ? AND fulfilled = false " +
@@ -190,14 +178,16 @@ public class LoanService {
         }
     }
 
-    private String lockActiveLoanAndGetItem(Connection connection, int loanId) throws SQLException {
+    // I zgjeruar per te kthyer edhe memberId, jo vetem itemId — i nevojshem
+    // per te autorizuar returnItem() para se te vazhdoje me UPDATE.
+    private ActiveLoanInfo lockActiveLoanAndGetItem(Connection connection, int loanId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT item_id, return_date FROM loans WHERE id = ? FOR UPDATE")) {
+                "SELECT item_id, member_id, return_date FROM loans WHERE id = ? FOR UPDATE")) {
             statement.setInt(1, loanId);
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) throw new IllegalArgumentException("Huazimi me ID " + loanId + " nuk u gjet.");
                 if (result.getDate("return_date") != null) throw new IllegalStateException("Huazimi eshte kthyer tashme.");
-                return result.getString("item_id");
+                return new ActiveLoanInfo(result.getString("item_id"), result.getString("member_id"));
             }
         }
     }
@@ -221,10 +211,13 @@ public class LoanService {
         }
     }
 
-    // Provo Book, pastaj DVD — supozon hapesira ID te veçanta (p.sh. B001/D001).
     private LibraryItem resolveItem(String itemId) {
         return bookDAO.findById(itemId).map(item -> (LibraryItem) item)
                 .or(() -> dvdDAO.findById(itemId).map(item -> (LibraryItem) item))
                 .orElseThrow(() -> new IllegalArgumentException("Artikulli me ID " + itemId + " nuk u gjet."));
     }
+
+    // Record i vogel ndihmes, vetem per te kthyer dy vlera nga lockActiveLoanAndGetItem
+    // pa krijuar nje klase modeli te plote per nje perdorim kaq te ngushte.
+    private record ActiveLoanInfo(String itemId, String memberId) {}
 }
