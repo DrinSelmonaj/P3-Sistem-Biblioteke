@@ -193,10 +193,20 @@ public class Main {
                     System.out.println("Huazuar me sukses. Afati: " + loan.getDueDate());
 
                 } else if (choice.equals("3")) {
-                    System.out.print("ID e huazimit: ");
-                    int loanId = Integer.parseInt(scanner.nextLine().trim());
-                    loanService.returnItem(actor, loanId);
-                    System.out.println("Artikulli u kthye me sukses.");
+                    List<Loan> activeLoans = loanDAO.findActiveByMember(actor.getId());
+                    if (activeLoans.isEmpty()) {
+                        System.out.println("S'ke huazime aktive per te kthyer.");
+                    } else {
+                        System.out.println("--- Huazimet e tua aktive ---");
+                        for (Loan loan : activeLoans) {
+                            System.out.println("  #" + loan.getId() + " " + loan.getItem().getTitle()
+                                    + " | Afati: " + loan.getDueDate());
+                        }
+                        System.out.print("ID e huazimit qe do kthesh: ");
+                        int loanId = Integer.parseInt(scanner.nextLine().trim());
+                        loanService.returnItem(actor, loanId);
+                        System.out.println("Artikulli u kthye me sukses.");
+                    }
 
                 } else if (choice.equals("4")) {
                     List<Fine> fines = fineService.getFinesForMember(actor, actor.getId());
@@ -211,10 +221,21 @@ public class Main {
                     }
 
                 } else if (choice.equals("5")) {
-                    System.out.print("ID e gjobes qe do paguash: ");
-                    int fineId = Integer.parseInt(scanner.nextLine().trim());
-                    fineService.payFine(actor, fineId);
-                    System.out.println("Gjoba u pagua me sukses.");
+                    List<Fine> unpaidFines = fineService.getFinesForMember(actor, actor.getId()).stream()
+                            .filter(f -> !f.isPaid())
+                            .toList();
+                    if (unpaidFines.isEmpty()) {
+                        System.out.println("S'ke gjoba te papaguara.");
+                    } else {
+                        System.out.println("--- Gjobat e tua te papaguara ---");
+                        for (Fine fine : unpaidFines) {
+                            System.out.println("  #" + fine.getId() + " Shuma: " + fine.getAmount());
+                        }
+                        System.out.print("ID e gjobes qe do paguash: ");
+                        int fineId = Integer.parseInt(scanner.nextLine().trim());
+                        fineService.payFine(actor, fineId);
+                        System.out.println("Gjoba u pagua me sukses.");
+                    }
 
                 } else if (choice.equals("6")) {
                     running = false;
