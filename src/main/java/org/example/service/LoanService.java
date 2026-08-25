@@ -28,8 +28,6 @@ public class LoanService {
         this.dvdDAO = dvdDAO;
     }
 
-    // Autorizim: Member mund te huazoje VETEM per veten; Librarian per cilindo
-    // (p.sh. anetari vjen fizikisht ne sportel, librarian regjistron huazimin).
     public Loan borrowItem(Person actor, String memberId, String itemId) {
         if (!actor.canManageInventory() && !actor.getId().equals(memberId)) {
             throw new SecurityException("Mund te huazosh vetem per vete.");
@@ -89,7 +87,6 @@ public class LoanService {
         }
     }
 
-    // Autorizim: Member mund te kthej VETEM huazimet e veta; Librarian cilendo.
     public void returnItem(Person actor, int loanId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
@@ -115,7 +112,7 @@ public class LoanService {
                     updateAvailability(connection, itemId, true);
                 } else {
                     try (PreparedStatement statement = connection.prepareStatement(
-                            "UPDATE reservations SET ready_for_pickup = true WHERE id = ?")) {
+                            "UPDATE reservations SET ready_for_pickup = true, ready_since = NOW() WHERE id = ?")) {
                         statement.setInt(1, nextReservation);
                         statement.executeUpdate();
                     }
@@ -178,8 +175,6 @@ public class LoanService {
         }
     }
 
-    // I zgjeruar per te kthyer edhe memberId, jo vetem itemId — i nevojshem
-    // per te autorizuar returnItem() para se te vazhdoje me UPDATE.
     private ActiveLoanInfo lockActiveLoanAndGetItem(Connection connection, int loanId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT item_id, member_id, return_date FROM loans WHERE id = ? FOR UPDATE")) {
@@ -195,7 +190,7 @@ public class LoanService {
     private Integer lockNextWaitingReservation(Connection connection, String itemId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id FROM reservations WHERE item_id = ? AND fulfilled = false AND ready_for_pickup = false " +
-                        "ORDER BY reservation_date, id LIMIT 1 FOR UPDATE")) {
+                        "AND cancelled = false ORDER BY reservation_date, id LIMIT 1 FOR UPDATE")) {
             statement.setString(1, itemId);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? result.getInt("id") : null;
@@ -217,7 +212,5 @@ public class LoanService {
                 .orElseThrow(() -> new IllegalArgumentException("Artikulli me ID " + itemId + " nuk u gjet."));
     }
 
-    // Record i vogel ndihmes, vetem per te kthyer dy vlera nga lockActiveLoanAndGetItem
-    // pa krijuar nje klase modeli te plote per nje perdorim kaq te ngushte.
     private record ActiveLoanInfo(String itemId, String memberId) {}
 }

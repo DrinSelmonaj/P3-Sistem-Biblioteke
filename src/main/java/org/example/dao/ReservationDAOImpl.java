@@ -26,7 +26,7 @@ public class ReservationDAOImpl implements ReservationDAO {
 
     @Override
     public Optional<Reservation> findById(int id) {
-        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup " +
+            String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup, ready_since, cancelled " +
                 "FROM reservations WHERE id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
@@ -45,7 +45,7 @@ public class ReservationDAOImpl implements ReservationDAO {
 
     @Override
     public List<Reservation> findAll() {
-        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup FROM reservations";
+        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup, ready_since, cancelled FROM reservations";
 
         List<Reservation> reservations = new ArrayList<>();
 
@@ -102,7 +102,7 @@ public class ReservationDAOImpl implements ReservationDAO {
 
     @Override
     public void markReadyForPickup(int reservationId) {
-        String sql = "UPDATE reservations SET ready_for_pickup = true WHERE id = ?";
+        String sql = "UPDATE reservations SET ready_for_pickup = true, ready_since = NOW() WHERE id = ?";
 
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
@@ -114,11 +114,24 @@ public class ReservationDAOImpl implements ReservationDAO {
     }
 
     @Override
+    public void markCancelled(int reservationId) {
+        String sql = "UPDATE reservations SET cancelled = true, ready_for_pickup = false WHERE id = ?";
+
+        try (Connection conn = DBConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setInt(1, reservationId);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate anulimit te rezervimit " + reservationId, e);
+        }
+    }
+
+    @Override
     public List<Reservation> findQueueForItem(String itemId) {
         // Radha FIFO "on the fly": vetem rezervimet e papermbushura per kete artikull,
         // renditur sipas reservation_date ASC. Elementi i pare i listes = radhes.
-        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup " +
-                "FROM reservations WHERE item_id = ? AND fulfilled = false " +
+        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup, ready_since, cancelled " +
+                "FROM reservations WHERE item_id = ? AND fulfilled = false AND cancelled = false " +
                 "ORDER BY reservation_date ASC";
 
         List<Reservation> queue = new ArrayList<>();
@@ -136,6 +149,28 @@ public class ReservationDAOImpl implements ReservationDAO {
             throw new RuntimeException("Gabim gjate kerkimit te radhes per artikullin " + itemId, e);
         }
     }
+    @Override
+    public List<Reservation> findActiveByMember(String memberId) {
+        String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup, ready_since, cancelled " +
+                "FROM reservations WHERE member_id = ? AND fulfilled = false AND cancelled = false " +
+                "ORDER BY reservation_date ASC";
+
+        List<Reservation> reservations = new ArrayList<>();
+
+        try (Connection conn = DBConnection.getInstance().getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, memberId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    reservations.add(mapRowToReservation(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate kerkimit te rezervimeve per anetarin " + memberId, e);
+        }
+        return reservations;
+    }
+
 
     // Njesoj si resolveItem() ne LoanDAOImpl — polimorfizem mbi item_type
     // per te ditur nese duhet thirrur bookDAO apo dvdDAO.
@@ -177,11 +212,13 @@ public class ReservationDAOImpl implements ReservationDAO {
         Reservation reservation = new Reservation(member, item, rs.getDate("reservation_date").toLocalDate());
         reservation.setId(rs.getInt("id"));
 
-        if (rs.getBoolean("fulfilled")) {
-            reservation.markFulfilled();
-        }
-        if (rs.getBoolean("ready_for_pickup")) {
-            reservation.markReadyForPickup();
+        reservation.setFulfilled(rs.getBoolean("fulfilled"));
+        reservation.setReadyForPickup(rs.getBoolean("ready_for_pickup"));
+        reservation.setCancelled(rs.getBoolean("cancelled"));
+
+        Timestamp readySinceTs = rs.getTimestamp("ready_since");
+        if (readySinceTs != null) {
+            reservation.setReadySince(readySinceTs.toLocalDateTime());
         }
 
         return reservation;

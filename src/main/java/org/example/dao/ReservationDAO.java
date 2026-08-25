@@ -16,15 +16,28 @@ public interface ReservationDAO {
     // Aktivizon nje rezervim (kur libri kthehet dhe i takon radhes).
     // Marrim id si int, jo objekt Reservation, sepse modeli s'e ruan id-ne
     // (i njejti vendim si markReturned(int loanId, ...) te LoanDAO).
+
     void markFulfilled(int reservationId);
 
     // "Ready for pickup": artikulli mbahet per kete anetar specifik (radha FIFO)
     // pas kthimit, por s'eshte huazuar ende. markFulfilled() ndodh vetem kur
     // anetari e huazon realisht (shih LoanService.borrowItem()).
+
     void markReadyForPickup(int reservationId);
+
+    // I domosdoshem per Kapitullin 7: anulim vullnetar dhe skadim automatik i
+// pickup-it te dyja perfundojne ketu — rezervimi "vdes" pa u konsumuar.
+
+    void markCancelled(int reservationId);
 
     // Kjo ESHTE radha FIFO "on the fly" — asnje kolone e ruajtur per pozicionin,
     // vetem ORDER BY reservation_date ASC mbi rezervimet e papermbushura per nje artikull.
     // ReservationService do ta thërrasë kete per te gjetur cili anëtar eshte i radhes.
+
     List<Reservation> findQueueForItem(String itemId);
+
+    // I domosdoshem per menune e Member-it: "Shiko rezervimet e mia" / "Anulo".
+
+    List<Reservation> findActiveByMember(String memberId);
+
 }

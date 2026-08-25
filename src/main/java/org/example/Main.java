@@ -8,9 +8,20 @@ import java.io.Console;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Scanner;
-import java.sql.SQLException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Main {
+
+    // Kapitulli 7 — afati i biznesit (sa dite ka anetari per te marre nje rezervim
+    // ready_for_pickup para se t'i kaloje radhes tjeter) eshte i ndare qellimisht
+    // nga sa shpesh xhiron job-i qe e zbaton kete rregull. Per demonstrim sot,
+    // intervali eshte i shkurter (30 sek); ne "prodhim real" PICKUP_DAYS_ALLOWED
+    // do te mbetej i njejte, por intervali do te ishte psh 1 here ne dite.
+    private static final int PICKUP_DAYS_ALLOWED = 3;
+    private static final int SCHEDULER_INTERVAL_SECONDS = 30;
+
     public static void main(String[] args) {
         // --- Wiring i DAO-ve ---
         MemberDAO memberDAO = new MemberDAOImpl();
@@ -19,11 +30,32 @@ public class Main {
         LoanDAO loanDAO = new LoanDAOImpl(memberDAO, bookDAO, dvdDAO);
         FineDAO fineDAO = new FineDAOImpl(loanDAO);
         LibrarianDAO librarianDAO = new LibrarianDAOImpl();
+        ReservationDAO reservationDAO = new ReservationDAOImpl(memberDAO, bookDAO, dvdDAO);
 
         // --- Wiring i Service-ve ---
         AuthService authService = new AuthService(memberDAO, librarianDAO);
         LoanService loanService = new LoanService(memberDAO, bookDAO, dvdDAO);
         FineService fineService = new FineService(fineDAO);
+        ReservationService reservationService = new ReservationService();
+
+        // --- Scheduler per skadimin e rezervimeve "ready_for_pickup" ---
+        // Thread daemon (setDaemon(true)) — kjo eshte pika kyçe: nese do ishte
+        // thread normal, JVM do priste per te (dhe scanner.close() s'do mjaftonte
+        // per te mbyllur programin, do duhej System.exit()). Thread daemon lejon
+        // JVM-ne te mbyllet normalisht kur main() perfundon, edhe nese scheduler-i
+        // ende "xhiron" ne sfond.
+        ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "reservation-expiry-scheduler");
+            thread.setDaemon(true);
+            return thread;
+        });
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                reservationService.expireStaleReadyPickups(PICKUP_DAYS_ALLOWED);
+            } catch (Exception e) {
+                System.out.println("[SCHEDULER] Gabim gjate kontrollit te rezervimeve te skaduara: " + e.getMessage());
+            }
+        }, SCHEDULER_INTERVAL_SECONDS, SCHEDULER_INTERVAL_SECONDS, TimeUnit.SECONDS);
 
         Scanner scanner = new Scanner(System.in);
         // System.console() eshte i disponueshem vetem ne terminal te vertete
@@ -52,6 +84,7 @@ public class Main {
                     loggedInUser = result.get();
                     System.out.println("Mireserdhe, " + loggedInUser.getName() + "!");
                 } else {
+                    // Mesazh gjenerik qellimisht — s'zbulojme nese ID ekziston fare.
                     System.out.println("Username ose fjalekalim i gabuar. Provo perseri.\n");
                 }
 
@@ -68,10 +101,12 @@ public class Main {
         if (loggedInUser.canManageInventory()) {
             librarianMenu(scanner, loggedInUser, loanService, fineService, loanDAO, bookDAO, dvdDAO);
         } else {
-            memberMenu(scanner, loggedInUser, loanService, fineService, loanDAO, bookDAO, dvdDAO);
+            memberMenu(scanner, loggedInUser, loanService, fineService, reservationService,
+                    loanDAO, reservationDAO, bookDAO, dvdDAO);
         }
 
         scanner.close();
+        scheduler.shutdownNow();
         System.out.println("Mirupafshim!");
     }
 
@@ -84,7 +119,7 @@ public class Main {
             char[] passwordChars = console.readPassword("Fjalekalimi: ");
             return new String(passwordChars);
         } else {
-            System.out.print("Fjalekalimi (dukshem - xhiro nga Terminal.app per fshehje): ");
+            System.out.print("Fjalekalimi (i dukshem - xhiro nga Terminal.app per fshehje): ");
             return scanner.nextLine().trim();
         }
     }
@@ -112,24 +147,11 @@ public class Main {
             authService.setPassword(id, password);
             System.out.println("Regjistrimi u krye me sukses. Mireserdhe, " + name + "!\n");
             return newMember;
-        } catch (RuntimeException e) {
-            if (isDuplicateUsername(e)) {
-                System.out.println("Ky username eshte i zene tashme. Zgjidh nje tjeter.\n");
-            } else {
-                System.out.println("Gabim gjate regjistrimit: " + e.getMessage() + "\n");
-            }
+        } catch (Exception e) {
+            System.out.println("Gabim gjate regjistrimit: " + e.getMessage() + "\n");
             return null;
         }
     }
-
-    // PostgreSQL kthen SQLState "23505" specifikisht per shkelje te PRIMARY
-    // KEY/UNIQUE — e dallojme nga gabime te tjera (p.sh. DB e paarritshme)
-    // qe te japim mesazh te qarte vetem per rastin real: username i zene.
-    private static boolean isDuplicateUsername(Throwable e) {
-        Throwable cause = e.getCause();
-        return cause instanceof SQLException sqlEx && "23505".equals(sqlEx.getSQLState());
-    }
-
 
     // Listohen artikujt e disponueshem (ID + titull) — pa kete, anetari do
     // te duhej te dinte perpara ID-te e librave qe s'i ka pare kurre, gje
@@ -157,8 +179,29 @@ public class Main {
         }
     }
 
+    // Ndihmes i perbashket per opsionet "6" dhe "7" — shfaq rezervimet aktive te
+    // anetarit me status te qarte (gati per marrje / ne prite), qe te dyja opsionet
+    // (shiko / anulo) te kene te njejtin format shfaqjeje.
+    private static List<Reservation> printMyReservations(ReservationDAO reservationDAO, String memberId) {
+        List<Reservation> reservations = reservationDAO.findActiveByMember(memberId);
+        if (reservations.isEmpty()) {
+            System.out.println("S'ke rezervime aktive.");
+        } else {
+            System.out.println("--- Rezervimet e tua aktive ---");
+            for (Reservation reservation : reservations) {
+                String statusi = reservation.isReadyForPickup()
+                        ? "GATI PER MARRJE qe nga " + reservation.getReadySince()
+                        : "Ne prite ne radhe";
+                System.out.println("  #" + reservation.getId() + " " + reservation.getItem().getTitle()
+                        + " | " + statusi);
+            }
+        }
+        return reservations;
+    }
+
     private static void memberMenu(Scanner scanner, Person actor, LoanService loanService,
-                                   FineService fineService, LoanDAO loanDAO,
+                                   FineService fineService, ReservationService reservationService,
+                                   LoanDAO loanDAO, ReservationDAO reservationDAO,
                                    BookDAO bookDAO, DVDDAO dvdDAO) {
         boolean running = true;
         while (running) {
@@ -168,7 +211,9 @@ public class Main {
             System.out.println("3. Kthe artikull");
             System.out.println("4. Shiko gjobat e mia");
             System.out.println("5. Paguaj nje gjobe");
-            System.out.println("6. Dil");
+            System.out.println("6. Shiko rezervimet e mia");
+            System.out.println("7. Anulo nje rezervim");
+            System.out.println("8. Dil");
             System.out.print("Zgjedh: ");
             String choice = scanner.nextLine().trim();
 
@@ -238,6 +283,18 @@ public class Main {
                     }
 
                 } else if (choice.equals("6")) {
+                    printMyReservations(reservationDAO, actor.getId());
+
+                } else if (choice.equals("7")) {
+                    List<Reservation> reservations = printMyReservations(reservationDAO, actor.getId());
+                    if (!reservations.isEmpty()) {
+                        System.out.print("ID e rezervimit qe do anulosh: ");
+                        int reservationId = Integer.parseInt(scanner.nextLine().trim());
+                        reservationService.cancelReservation(actor, reservationId);
+                        System.out.println("Rezervimi u anulua.");
+                    }
+
+                } else if (choice.equals("8")) {
                     running = false;
 
                 } else {

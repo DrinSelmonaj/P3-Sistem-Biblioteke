@@ -50,11 +50,12 @@ CREATE TABLE loans (
 );
 
 CREATE TABLE reservations (
-    id SERIAL PRIMARY KEY,
-    member_id VARCHAR(50) NOT NULL REFERENCES members(person_id),
-    item_id VARCHAR(50) NOT NULL REFERENCES library_items(id),
-    reservation_date DATE NOT NULL,
-    fulfilled BOOLEAN NOT NULL DEFAULT false
+                              id SERIAL PRIMARY KEY,
+                              member_id VARCHAR(50) NOT NULL REFERENCES members(person_id),
+                              item_id VARCHAR(50) NOT NULL REFERENCES library_items(id),
+                              reservation_date DATE NOT NULL,
+                              fulfilled BOOLEAN NOT NULL DEFAULT false,
+                              ready_for_pickup BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE fines (
