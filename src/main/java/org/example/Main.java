@@ -37,6 +37,7 @@ public class Main {
         LoanService loanService = new LoanService(memberDAO, bookDAO, dvdDAO);
         FineService fineService = new FineService(fineDAO);
         ReservationService reservationService = new ReservationService();
+        ReportService reportService = new ReportService();
 
         // --- Scheduler per skadimin e rezervimeve "ready_for_pickup" ---
         // Thread daemon (setDaemon(true)) — kjo eshte pika kyçe: nese do ishte
@@ -99,7 +100,7 @@ public class Main {
         // --- Dallimi i menuse sipas rolit — perdor te njejten metode polimorfike
         // qe perdoret per autorizim ne LoanService/FineService (canManageInventory()).
         if (loggedInUser.canManageInventory()) {
-            librarianMenu(scanner, loggedInUser, loanService, fineService, loanDAO, bookDAO, dvdDAO);
+            librarianMenu(scanner, loggedInUser, loanService, fineService,reportService, loanDAO, bookDAO, dvdDAO);
         } else {
             memberMenu(scanner, loggedInUser, loanService, fineService, reservationService,
                     loanDAO, reservationDAO, bookDAO, dvdDAO);
@@ -176,6 +177,35 @@ public class Main {
         }
         if (!anyAvailable) {
             System.out.println("  (asnje artikull i disponueshem momentalisht)");
+        }
+    }
+    // Printon te tre raportet njeheresh — permbledhje + me te huazuarit + gjobat.
+    private static void printReports(ReportService reportService, Person actor) {
+        ReportService.SystemSummary summary = reportService.getSystemSummary(actor);
+        System.out.println("--- Permbledhje e Sistemit ---");
+        System.out.println("Huazime aktive: " + summary.activeLoans());
+        System.out.println("Huazime te vonuara: " + summary.overdueLoans());
+        System.out.println("Gjoba totale te papaguara: " + summary.totalUnpaidFines());
+        System.out.println("Rezervime ne pritje: " + summary.pendingReservations());
+
+        System.out.println("\n--- 5 Artikujt me te Huazuar ---");
+        List<ReportService.ItemBorrowCount> mostBorrowed = reportService.getMostBorrowedItems(actor, 5);
+        if (mostBorrowed.isEmpty()) {
+            System.out.println("S'ka te dhena huazimesh ende.");
+        } else {
+            for (ReportService.ItemBorrowCount item : mostBorrowed) {
+                System.out.println("  " + item.itemId() + " — " + item.title() + " | Huazuar " + item.timesBorrowed() + " here");
+            }
+        }
+
+        System.out.println("\n--- Anetaret me Gjoba te Papaguara ---");
+        List<ReportService.MemberDebt> debts = reportService.getMembersWithUnpaidFines(actor);
+        if (debts.isEmpty()) {
+            System.out.println("Asnje anetar s'ka gjoba te papaguara.");
+        } else {
+            for (ReportService.MemberDebt debt : debts) {
+                System.out.println("  " + debt.memberId() + " — " + debt.name() + " | Borgji: " + debt.unpaidFines());
+            }
         }
     }
 
@@ -309,7 +339,7 @@ public class Main {
     }
 
     private static void librarianMenu(Scanner scanner, Person actor, LoanService loanService,
-                                      FineService fineService, LoanDAO loanDAO,
+                                      FineService fineService, ReportService reportService, LoanDAO loanDAO,
                                       BookDAO bookDAO, DVDDAO dvdDAO) {
         boolean running = true;
         while (running) {
@@ -318,7 +348,8 @@ public class Main {
             System.out.println("2. Regjistro kthim");
             System.out.println("3. Krijo gjobe per nje huazim te vonuar");
             System.out.println("4. Shiko historine e plote te pagesave");
-            System.out.println("5. Dil");
+            System.out.println("5. Raporte");
+            System.out.println("6. Dil");
             System.out.print("Zgjedh: ");
             String choice = scanner.nextLine().trim();
 
@@ -360,6 +391,9 @@ public class Main {
                     }
 
                 } else if (choice.equals("5")) {
+                    printReports(reportService, actor);
+
+                } else if (choice.equals("6")) {
                     running = false;
 
                 } else {
