@@ -16,17 +16,33 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
 
+/**
+ * Hyrja ne sistem dhe krijimi i llogarive. Fjalekalimet s'ruhen kurre si tekst —
+ * vetem hash BCrypt (me salt te perfshire ne vete hash-in).
+ */
 public class AuthService {
     private final MemberDAO memberDAO;
     private final LibrarianDAO librarianDAO;
 
+    /**
+     * @param memberDAO    per te ngarkuar anetarin pas login-it
+     * @param librarianDAO per te ngarkuar bibliotekarin pas login-it
+     */
     public AuthService(MemberDAO memberDAO, LibrarianDAO librarianDAO) {
         this.memberDAO = memberDAO;
         this.librarianDAO = librarianDAO;
     }
-    // Kthen Optional bosh si per ID te panjohur, ashtu edhe per fjalekalim te gabuar —
-    // qellimisht s'i dallon keto dy raste ketu, qe CLI-ja te japi mesazh gjenerik dhe
-    // te mos zbuloje nese nje ID ekziston fare ("user enumeration").
+    /**
+     * Kontrollon kredencialet dhe kthen personin konkret (Member ose Librarian).
+     *
+     * <p>Kthen Optional bosh si per ID te panjohur, ashtu edhe per fjalekalim te gabuar —
+     * qellimisht s'i dallon keto dy raste, qe CLI-ja te japi mesazh gjenerik dhe te mos
+     * zbuloje nese nje ID ekziston fare ("user enumeration").
+     *
+     * @param id          username-i
+     * @param rawPassword fjalekalimi i shkruar nga perdoruesi
+     * @return personi i kycur, ose bosh nese kredencialet jane te gabuara
+     */
     public Optional<Person> login(String id,String rawPassword){
         try(Connection connection = DBConnection.getInstance().getConnection()){
 
@@ -74,7 +90,18 @@ public class AuthService {
     }
     static final int MIN_PASSWORD_LENGTH = 8;
 
-    // Sign Up i nje anetari te ri — nuk kerkon actor, cdokush mund te regjistrohet si Member.
+    /**
+     * Sign Up i nje anetari te ri — s'kerkon actor, cdokush mund te regjistrohet si Member.
+     * Persons, members dhe hash-i ruhen ne nje transaksion te vetem.
+     *
+     * @param id          username-i (3-50 shkronja, shifra, _ . -)
+     * @param name        emri i plote
+     * @param email       adresa email (kontroll bazik formati)
+     * @param phone       telefoni; bosh ruhet si NULL
+     * @param rawPassword te pakten {@value #MIN_PASSWORD_LENGTH} karaktere
+     * @return anetari i krijuar, gati per login
+     * @throws IllegalArgumentException per input te pavlefshem ose username te zene
+     */
     public Member registerMember(String id, String name, String email, String phone, String rawPassword) {
         Member member = new Member(validateUsername(id), validateName(name), validateEmail(email), blankToNull(phone));
         insertPerson(member, "MEMBER", rawPassword,
@@ -82,8 +109,21 @@ public class AuthService {
         return member;
     }
 
-    // Vetem nje bibliotekar ekzistues mund te krijoje bibliotekar te ri — perndryshe
-    // cdo anetar do te mund t'i jepte vetes te drejta mbi inventarin dhe gjobat.
+    /**
+     * Krijon llogari bibliotekari. Vetem nje bibliotekar ekzistues mund ta beje kete —
+     * perndryshe cdo anetar do te mund t'i jepte vetes te drejta mbi inventarin dhe gjobat.
+     *
+     * @param actor        personi qe e kryen veprimin; duhet te jete bibliotekar
+     * @param id           username-i i ri
+     * @param name         emri i plote
+     * @param email        adresa email
+     * @param phone        telefoni; bosh ruhet si NULL
+     * @param employeeCode kodi unik i punonjesit (1-20 karaktere)
+     * @param rawPassword  te pakten {@value #MIN_PASSWORD_LENGTH} karaktere
+     * @return bibliotekari i krijuar, gati per login
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException per input te pavlefshem, username ose kod punonjesi te zene
+     */
     public Librarian registerLibrarian(Person actor, String id, String name, String email, String phone,
                                        String employeeCode, String rawPassword) {
         if (!actor.canManageInventory()) {
@@ -169,15 +209,24 @@ public class AuthService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    // Perdoret vetem kur krijohet/rivendoset password per nje Person (p.sh. migrim
-    // fillestar i te dhenave test, ose nje krijim i ri anetari nga Librarian).
+    /**
+     * Hash BCrypt me salt te ri. Perdoret kur krijohet ose rivendoset fjalekalimi.
+     *
+     * @param rawPassword fjalekalimi ne tekst
+     * @return hash-i (60 karaktere, formati $2a$)
+     */
     public static String hashPassword(String rawPassword) {
         return BCrypt.hashpw(rawPassword, BCrypt.gensalt());
     }
 
-    // Vendos fjalekalimin real per nje Person qe tashme ekziston ne DB (i krijuar
-    // me placeholder nga MemberDAO/LibrarianDAO.save()). I domosdoshem per flow-in
-    // e sign-up: save() krijon rreshtin, kjo metode e ben te kycshem realisht.
+    /**
+     * Vendos fjalekalim te ri per nje person qe ekziston tashme ne DB (p.sh. nje llogari
+     * e krijuar me placeholder nga MemberDAO/LibrarianDAO.save(), ose rivendosje fjalekalimi).
+     *
+     * @param personId    username-i
+     * @param rawPassword fjalekalimi i ri
+     * @throws IllegalArgumentException nese personi s'ekziston
+     */
     public void setPassword(String personId, String rawPassword) {
         String hash = hashPassword(rawPassword);
         try (Connection connection = DBConnection.getInstance().getConnection();

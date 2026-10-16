@@ -1,5 +1,9 @@
 package org.example.model;
 
+/**
+ * Artikull i huazueshem — baza e {@link Book} dhe {@link DVD}. Ne DB:
+ * {@code library_items} + {@code books}/{@code dvds}.
+ */
 public abstract class LibraryItem {
     private String id;
     private String title;
@@ -13,6 +17,11 @@ public abstract class LibraryItem {
         this.available = true;
     }
 
+    /**
+     * Polimorfizem: cdo tip artikulli ka afatin e vet te huazimit.
+     *
+     * @return sa dite zgjat huazimi (21 per liber, 7 per DVD)
+     */
     public abstract int getLoanPeriodDays();
 
     public String getId() { return id; }

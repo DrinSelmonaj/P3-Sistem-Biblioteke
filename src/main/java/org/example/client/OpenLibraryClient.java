@@ -13,6 +13,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Kerkim librash ne <a href="https://openlibrary.org/developers/api">Open Library Search API</a>,
+ * per importin e katalogut nga bibliotekari.
+ */
 public class OpenLibraryClient {
 
     private static final String BASE_URL = "https://openlibrary.org/search.json";
@@ -24,6 +28,7 @@ public class OpenLibraryClient {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
+    /** Krijon klientin me timeout 5s per lidhjen dhe 10s per kerkesen. */
     public OpenLibraryClient() {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
@@ -31,6 +36,11 @@ public class OpenLibraryClient {
         this.objectMapper = new ObjectMapper();
     }
 
+    /**
+     * @param query titulli ose fjalet kyce
+     * @return deri ne 10 rezultate; ISBN-ja mund te jete null nese Open Library s'e ka
+     * @throws RuntimeException nese API kthen status tjeter nga 200 ose lidhja deshton
+     */
     public List<BookSearchResult> search(String query) {
         String encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8);
         String url = BASE_URL + "?q=" + encodedQuery + "&fields=" + FIELDS + "&limit=10";

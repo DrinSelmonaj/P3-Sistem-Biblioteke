@@ -3,11 +3,18 @@ package org.example.util;
 import org.example.model.Category;
 import org.example.model.InvalidCategoryException;
 
+/** Konverton input tekst ose numer ne {@link Category}. */
 public class CategoryParser {
 
     // Klasë vetëm me metoda statike — s'ka kuptim ta instancosh (new CategoryParser())
     private CategoryParser() {}
 
+    /**
+     * @param input numer nga menuja (1 = kategoria e pare) ose emer konstante
+     *              ("science", "non-fiction" pranohen)
+     * @return kategoria
+     * @throws InvalidCategoryException nese input-i s'perputhet me asnje kategori
+     */
     public static Category fromInput(String input) throws InvalidCategoryException {
         String trimmed = input.trim();
 

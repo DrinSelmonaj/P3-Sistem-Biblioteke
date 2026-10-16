@@ -12,28 +12,44 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 
-// Mban te sinkronizuara fines dhe bilancin e papaguar te anetarit (members.unpaid_fines),
-// dhe tani gjithashtu zbaton kush lejohet te beje cfare (authorization ne backend,
-// jo vetem ndarje menuje ne CLI — shih rregullat e Kapitullit 6).
-//
-// Rregulli i autorizimit:
-//  - issue()            : vetem Librarian (krijimi i gjobave eshte pune stafi)
-//  - payFine()           : Member mund te paguaje VETEM gjoben e vet; Librarian gjithkujt
-//                          (p.sh. pagese cash ne sportel ne emer te anetarit)
-//  - getFinesForMember() : Member sheh vetem gjobat e veta; Librarian sheh cilindo
-//  - getAllPayments()    : vetem Librarian — historia e plote e sistemit
-//
-// Njesoj si LoanService: SQL direkt brenda 1 transaksioni te vetem per shkrimet
-// (jo permes FineDAO). FineDAO perdoret vetem per lexime (getFinesForMember/
-// getAllPayments), qe jane jashte cdo transaksioni shkrimi.
+/**
+ * Mban te sinkronizuara {@code fines} dhe bilancin e papaguar te anetarit
+ * ({@code members.unpaid_fines}), dhe zbaton kush lejohet te beje cfare
+ * (autorizim ne backend, jo vetem ndarje menuje ne CLI — rregullat e Kapitullit 6).
+ *
+ * <ul>
+ *   <li>{@link #issue}: vetem Librarian (krijimi i gjobave eshte pune stafi)</li>
+ *   <li>{@link #payFine}: Member paguan VETEM gjoben e vet; Librarian gjithkujt
+ *       (p.sh. pagese cash ne sportel ne emer te anetarit)</li>
+ *   <li>{@link #getFinesForMember}: Member sheh vetem gjobat e veta; Librarian cilindo</li>
+ *   <li>{@link #getAllPayments}: vetem Librarian — historia e plote e sistemit</li>
+ * </ul>
+ *
+ * <p>Njesoj si LoanService: SQL direkt brenda nje transaksioni per shkrimet (jo permes
+ * FineDAO). FineDAO perdoret vetem per lexime, jashte cdo transaksioni shkrimi.
+ * Gjobat per kthim te vonuar krijohen automatikisht nga {@link LoanService#returnItem}.
+ */
 public class FineService {
 
     private final FineDAO fineDAO;
 
+    /** @param fineDAO per leximet e gjobave */
     public FineService(FineDAO fineDAO) {
         this.fineDAO = fineDAO;
     }
 
+    /**
+     * Krijon gjobe manuale per nje huazim te vonuar (p.sh. huazim ende aktiv) dhe rrit
+     * bilancin e anetarit. Nese huazimi ka gjoba tashme, ngarkohet vetem diferenca — e njejta
+     * logjike si gjoba automatike ne kthim, qe anetari te mos paguaje dy here.
+     *
+     * @param actor personi qe e kryen veprimin; duhet te jete bibliotekar
+     * @param fine  gjoba me shumen e llogaritur nga ditet e vonese; pas thirrjes ka ID dhe
+     *              shumen e ngarkuar realisht
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException nese huazimi s'eshte ruajtur ose shuma s'eshte pozitive
+     * @throws IllegalStateException    nese huazimi eshte gjobitur tashme per te gjitha ditet
+     */
     public void issue(Person actor, Fine fine) {
         requireLibrarian(actor, "Vetem librarianet mund te krijojne gjoba.");
 
@@ -100,8 +116,16 @@ public class FineService {
         }
     }
 
-    // Riemertuar nga markPaid() -> payFine(): tani eshte veprim aktiv qe vete
-    // anetari mund ta kryeje (jo vetem "dikush e shenon te paguar" nga stafi).
+    /**
+     * Paguan nje gjobe dhe zbret bilancin e anetarit (kurre nen zero). Veprim aktiv qe
+     * vete anetari mund ta kryeje, jo vetem "dikush e shenon te paguar" nga stafi.
+     *
+     * @param actor  anetari qe paguan gjoben e vet, ose bibliotekar
+     * @param fineId ID-ja e gjobes
+     * @throws IllegalArgumentException nese gjoba s'ekziston
+     * @throws IllegalStateException    nese gjoba eshte paguar tashme
+     * @throws SecurityException        nese anetari provon te paguaje gjoben e dikujt tjeter
+     */
     public void payFine(Person actor, int fineId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
@@ -156,8 +180,15 @@ public class FineService {
         }
     }
 
-    // "Borgjet e mia" / "historia ime" — perfshin te dyja, te paguara dhe te
-    // papaguara; CLI-ja mund t'i filtroje me isPaid() sipas nevojes se ekranit.
+    /**
+     * "Gjobat e mia" — perfshin te paguarat dhe te papaguarat; CLI-ja i filtron me
+     * {@code isPaid()} sipas nevojes se ekranit.
+     *
+     * @param actor    anetari vete, ose bibliotekar
+     * @param memberId anetari, gjobat e te cilit kerkohen
+     * @return gjobat, me te rejat ne fillim
+     * @throws SecurityException nese anetari kerkon gjobat e dikujt tjeter
+     */
     public List<Fine> getFinesForMember(Person actor, String memberId) {
         if (!actor.canManageInventory() && !actor.getId().equals(memberId)) {
             throw new SecurityException("Mund te shikosh vetem gjobat e tua.");
@@ -165,7 +196,13 @@ public class FineService {
         return fineDAO.findByMemberId(memberId);
     }
 
-    // Historia e plote e sistemit — vetem stafi ka qasje, siç kerkoi Drin.
+    /**
+     * Historia e plote e gjobave ne sistem.
+     *
+     * @param actor duhet te jete bibliotekar
+     * @return te gjitha gjobat
+     * @throws SecurityException nese actor s'eshte bibliotekar
+     */
     public List<Fine> getAllPayments(Person actor) {
         requireLibrarian(actor, "Vetem librarianet mund te shikojne historine e plote te pagesave.");
         return fineDAO.findAll();

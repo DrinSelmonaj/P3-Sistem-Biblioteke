@@ -3,6 +3,7 @@ package org.example.model;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/** Gjobe per kthim te vonuar — 0.50 € per cdo dite vonese. */
 public class Fine {
     private static final double DAILY_RATE = 0.50;
 
@@ -15,6 +16,10 @@ public class Fine {
     private boolean paid;
     private LocalDateTime paidDate;//null deri te paguhet gjoba
 
+    /**
+     * @param loan       huazimi i vonuar; shuma llogaritet nga ditet e tij te vonese
+     * @param issuedDate data e krijimit te gjobes
+     */
     public Fine(Loan loan, LocalDate issuedDate) {
         this.loan = loan;
         this.issuedDate = issuedDate;
@@ -26,12 +31,18 @@ public class Fine {
         return amountForDaysOverdue(loan.getDaysOverdue());
     }
 
-    // Burimi i vetem i tarifes — LoanService e perdor per gjoben automatike ne
-    // kthim, qe 0.50/dite te mos jete e shkruar ne dy vende te ndryshme.
+    /**
+     * Burimi i vetem i tarifes — LoanService e perdor per gjoben automatike ne kthim,
+     * qe 0.50/dite te mos jete e shkruar ne dy vende te ndryshme.
+     *
+     * @param daysOverdue ditet e vonese
+     * @return shuma e gjobes; 0.0 per 0 ose me pak dite
+     */
     public static double amountForDaysOverdue(long daysOverdue) {
         return daysOverdue > 0 ? daysOverdue * DAILY_RATE : 0.0;
     }
 
+    /** Shenon gjoben te paguar tani. */
     public void markPaid() {
         this.paid = true;
         this.paidDate = LocalDateTime.now();

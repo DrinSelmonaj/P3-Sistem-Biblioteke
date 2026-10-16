@@ -15,9 +15,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
 
-// Menaxhimi i katalogut nga bibliotekari: shto / ndrysho / fshi libra dhe DVD.
-// PSE nje service me vete (jo DAO direkt nga Main): autorizimi dhe validimi
-// jane rregulla biznesi — DAO-ja vetem lexon/shkruan, s'vendos kush ka te drejte.
+/**
+ * Menaxhimi i katalogut nga bibliotekari: shto, ndrysho dhe fshi libra e DVD.
+ * PSE nje service me vete (jo DAO direkt nga Main): autorizimi dhe validimi jane rregulla
+ * biznesi — DAO-ja vetem lexon dhe shkruan, s'vendos kush ka te drejte.
+ */
 public class InventoryService {
 
     private static final int MAX_TEXT = 255;          // VARCHAR(255) te title/author
@@ -26,11 +28,28 @@ public class InventoryService {
     private final BookDAO bookDAO;
     private final DVDDAO dvdDAO;
 
+    /**
+     * @param bookDAO qasja ne DB per librat
+     * @param dvdDAO  qasja ne DB per DVD-te
+     */
     public InventoryService(BookDAO bookDAO, DVDDAO dvdDAO) {
         this.bookDAO = bookDAO;
         this.dvdDAO = dvdDAO;
     }
 
+    /**
+     * Shton liber te ri ne katalog (i lire per huazim).
+     *
+     * @param actor    duhet te jete bibliotekar
+     * @param id       ID unike (1-50 shkronja, shifra, _ ose -)
+     * @param title    titulli
+     * @param category kategoria
+     * @param author   autori
+     * @param isbn     ISBN-10 ose ISBN-13; lejohen viza, ruhet vetem me shifra
+     * @return libri i ruajtur
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException per input te pavlefshem, ose ID/ISBN qe ekziston tashme
+     */
     public Book addBook(Person actor, String id, String title, Category category, String author, String isbn) {
         requireLibrarian(actor);
         Book book = new Book(validateId(id), validateText(title, "Titulli"), requireCategory(category),
@@ -39,6 +58,18 @@ public class InventoryService {
         return book;
     }
 
+    /**
+     * Shton DVD te re ne katalog (e lire per huazim).
+     *
+     * @param actor           duhet te jete bibliotekar
+     * @param id              ID unike
+     * @param title           titulli
+     * @param category        kategoria
+     * @param durationMinutes kohezgjatja, 1-1000 minuta
+     * @return DVD-ja e ruajtur
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException per input te pavlefshem ose ID qe ekziston tashme
+     */
     public DVD addDVD(Person actor, String id, String title, Category category, int durationMinutes) {
         requireLibrarian(actor);
         DVD dvd = new DVD(validateId(id), validateText(title, "Titulli"), requireCategory(category),
@@ -47,6 +78,19 @@ public class InventoryService {
         return dvd;
     }
 
+    /**
+     * Ndryshon te dhenat e nje libri. Disponueshmeria s'preket — nje liber i huazuar mbetet i zene.
+     *
+     * @param actor    duhet te jete bibliotekar
+     * @param id       ID-ja e librit ekzistues
+     * @param title    titulli i ri
+     * @param category kategoria e re
+     * @param author   autori i ri
+     * @param isbn     ISBN-ja e re (normalizohet)
+     * @return libri me vlerat e reja
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException nese libri s'ekziston, input-i eshte i pavlefshem ose ISBN-ja eshte e zene
+     */
     public Book updateBook(Person actor, String id, String title, Category category, String author, String isbn) {
         requireLibrarian(actor);
         Book existing = bookDAO.findById(id)
@@ -58,6 +102,18 @@ public class InventoryService {
         return updated;
     }
 
+    /**
+     * Ndryshon te dhenat e nje DVD-je; disponueshmeria s'preket.
+     *
+     * @param actor           duhet te jete bibliotekar
+     * @param id              ID-ja e DVD-se ekzistuese
+     * @param title           titulli i ri
+     * @param category        kategoria e re
+     * @param durationMinutes kohezgjatja e re, 1-1000 minuta
+     * @return DVD-ja me vlerat e reja
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException nese DVD-ja s'ekziston ose input-i eshte i pavlefshem
+     */
     public DVD updateDVD(Person actor, String id, String title, Category category, int durationMinutes) {
         requireLibrarian(actor);
         DVD existing = dvdDAO.findById(id)
@@ -69,14 +125,26 @@ public class InventoryService {
         return updated;
     }
 
+    /**
+     * @param id ID-ja e artikullit
+     * @return libri ose DVD-ja me kete ID, ose bosh
+     */
     public Optional<LibraryItem> findItem(String id) {
         return bookDAO.findById(id).map(book -> (LibraryItem) book)
                 .or(() -> dvdDAO.findById(id).map(dvd -> (LibraryItem) dvd));
     }
 
-    // Fshin vetem artikuj pa asnje histori. PSE: loans/reservations kane foreign key
-    // drejt library_items — historia e huazimeve dhe gjobave duhet te mbetet e
-    // lexueshme per raportet, keshtu qe nje artikull i perdorur s'fshihet kurre.
+    /**
+     * Fshin artikull pa asnje histori. PSE: loans dhe reservations kane foreign key drejt
+     * library_items — historia e huazimeve dhe gjobave duhet te mbetet e lexueshme per
+     * raportet, keshtu qe nje artikull i perdorur s'fshihet kurre.
+     *
+     * @param actor duhet te jete bibliotekar
+     * @param id    ID-ja e artikullit
+     * @throws SecurityException        nese actor s'eshte bibliotekar
+     * @throws IllegalArgumentException nese artikulli s'ekziston
+     * @throws IllegalStateException    nese artikulli ka huazime ose rezervime ne histori
+     */
     public void deleteItem(Person actor, String id) {
         requireLibrarian(actor);
         LibraryItem item = findItem(id)

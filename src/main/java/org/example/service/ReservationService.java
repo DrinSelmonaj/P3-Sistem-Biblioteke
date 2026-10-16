@@ -11,15 +11,22 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
-// SQL direkt brenda 1 transaksioni te vetem — i njejti pattern si LoanService/FineService.
-// PSE ky service ekziston: deri ne Kapitullin 7, rezervimet "ready_for_pickup" mbeteshin
-// te mbajtura per anetarin per gjithmone, pa afat — nese anetari kurre s'vinte ta merrte,
-// artikulli mbetej i bllokuar perhere. expireStaleReadyPickups() mbyll kete gap.
+/**
+ * Rezervimet: krijimi, anulimi dhe skadimi i rezervimeve "gati per marrje".
+ * SQL direkt brenda nje transaksioni — i njejti pattern si LoanService/FineService.
+ *
+ * <p>PSE skadimi: pa te, nje rezervim "gati per marrje" mbetej i mbajtur per anetarin
+ * pergjithmone — nese ai s'vinte kurre, artikulli mbetej i bllokuar.
+ */
 public class ReservationService {
 
-    // Thelbi i "job-it" periodik — thirret nga nje scheduler ne Main (ose mund te
-    // thirret manualisht/nga teste). Per çdo rezervim "ready_for_pickup" me kohe
-    // te kaluar, e anulon dhe i jep radhen tjetrit ne rradhe (ose liron artikullin).
+    /**
+     * Anulon rezervimet "gati per marrje" qe s'jane marre ne kohe dhe ia kalon artikullin
+     * te tjetrit ne radhe (ose e liron). Thirret periodikisht nga scheduler-i ne Main;
+     * cdo rezervim skadohet ne transaksionin e vet.
+     *
+     * @param daysAllowed sa dite ka anetari per ta marre artikullin
+     */
     public void expireStaleReadyPickups(int daysAllowed) {
         List<Integer> expiredIds = findExpiredReadyPickupIds(daysAllowed);
 
@@ -102,15 +109,30 @@ public class ReservationService {
         }
     }
 
-    // Rezultati i rezervimit: id-ja e re + pozicioni ne radhe (1 = i pari qe e merr).
+    /**
+     * Rezultati i rezervimit.
+     *
+     * @param reservationId ID-ja e rezervimit te ri
+     * @param queuePosition pozicioni ne radhe (1 = i pari qe e merr)
+     */
     public record ReservationResult(int reservationId, int queuePosition) {}
 
-    // Krijon rezervim per nje artikull qe aktualisht s'eshte i disponueshem.
-    // Autorizim: Member rezervon VETEM per vete; Librarian per cilindo — njesoj si borrowItem().
-    //
-    // PSE FOR UPDATE mbi library_items: dy kerkesa njekohesisht per te njejtin
-    // artikull serializohen ketu, keshtu qe kontrolli "a ke rezervim aktiv tashme?"
-    // s'mund te kalohet nga dy thread-e njeheresh (s'krijohen dy rezervime te njejta).
+    /**
+     * Krijon rezervim per nje artikull qe aktualisht s'eshte i disponueshem.
+     *
+     * <p>{@code FOR UPDATE} mbi artikullin serializon kerkesat njekohesisht per te njejtin
+     * artikull, keshtu qe kontrolli "a ke rezervim aktiv tashme?" s'mund te kalohet nga dy
+     * thread-e njeheresh.
+     *
+     * @param actor    anetari vete, ose bibliotekar
+     * @param memberId anetari per te cilin rezervohet
+     * @param itemId   artikulli i zene
+     * @return ID-ja e rezervimit dhe pozicioni ne radhe
+     * @throws SecurityException        nese anetari rezervon per dike tjeter
+     * @throws IllegalArgumentException nese artikulli ose anetari s'ekziston
+     * @throws IllegalStateException    nese artikulli eshte i lire, anetari ka gjoba te papaguara,
+     *                                  e ka vete te huazuar ose ka tashme rezervim aktiv per te
+     */
     public ReservationResult reserveItem(Person actor, String memberId, String itemId) {
         if (!actor.canManageInventory() && !actor.getId().equals(memberId)) {
             throw new SecurityException("Mund te rezervosh vetem per vete.");
@@ -202,7 +224,16 @@ public class ReservationService {
         }
     }
 
-    // Autorizim: Member mund te anuloje VETEM rezervimet e veta; Librarian cilendo.
+    /**
+     * Anulon rezervimin. Nese ishte "gati per marrje", artikulli i kalon te tjetrit ne radhe
+     * ose behet i lire.
+     *
+     * @param actor         anetari qe anulon rezervimin e vet, ose bibliotekar
+     * @param reservationId ID-ja e rezervimit
+     * @throws IllegalArgumentException nese rezervimi s'ekziston
+     * @throws IllegalStateException    nese eshte permbushur ose anuluar tashme
+     * @throws SecurityException        nese anetari anulon rezervimin e dikujt tjeter
+     */
     public void cancelReservation(Person actor, int reservationId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);

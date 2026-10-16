@@ -10,16 +10,41 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
-// Vetem lexim — asnje metode ketu s'ndryshon te dhena, keshtu qe s'ka nevoje per
-// transaksione (setAutoCommit/commit) si te LoanService/FineService/ReservationService.
-// Autorizim: vetem Librarian, njesoj si FineService.getAllPayments() — te dhena
-// administrative te gjithe sistemit, jo personale te nje anetari.
+/**
+ * Raportet administrative per bibliotekarin. Vetem lexim — asnje metode s'ndryshon te
+ * dhena, keshtu qe s'ka nevoje per transaksione si te LoanService/FineService.
+ * Autorizim: vetem Librarian, njesoj si {@link FineService#getAllPayments} — te dhena te
+ * gjithe sistemit, jo personale te nje anetari.
+ */
 public class ReportService {
 
+    /**
+     * @param activeLoans         huazimet e pakthyera
+     * @param overdueLoans        huazimet e pakthyera me afat te kaluar
+     * @param totalUnpaidFines    shuma e gjobave te papaguara te te gjithe anetareve
+     * @param pendingReservations rezervimet aktive (ne prite ose gati per marrje)
+     */
     public record SystemSummary(int activeLoans, int overdueLoans, double totalUnpaidFines, int pendingReservations) {}
+    /**
+     * @param itemId        ID-ja e artikullit
+     * @param title         titulli
+     * @param timesBorrowed sa here eshte huazuar gjithsej
+     */
     public record ItemBorrowCount(String itemId, String title, int timesBorrowed) {}
+    /**
+     * @param memberId    username-i i anetarit
+     * @param name        emri
+     * @param unpaidFines bilanci i papaguar
+     */
     public record MemberDebt(String memberId, String name, double unpaidFines) {}
 
+    /**
+     * Permbledhja e gjendjes se sistemit, me nje pyetje te vetme ne DB.
+     *
+     * @param actor duhet te jete bibliotekar
+     * @return numrat aktuale te huazimeve, gjobave dhe rezervimeve
+     * @throws SecurityException nese actor s'eshte bibliotekar
+     */
     public SystemSummary getSystemSummary(Person actor) {
         requireLibrarian(actor);
 
@@ -47,6 +72,14 @@ public class ReportService {
         }
     }
 
+    /**
+     * Artikujt me te huazuar gjithe kohes (huazimet historike, jo vetem aktive).
+     *
+     * @param actor duhet te jete bibliotekar
+     * @param limit sa artikuj te kthehen
+     * @return artikujt, me te huazuarin ne fillim
+     * @throws SecurityException nese actor s'eshte bibliotekar
+     */
     public List<ItemBorrowCount> getMostBorrowedItems(Person actor, int limit) {
         requireLibrarian(actor);
 
@@ -76,6 +109,13 @@ public class ReportService {
         return results;
     }
 
+    /**
+     * Anetaret me bilanc te papaguar.
+     *
+     * @param actor duhet te jete bibliotekar
+     * @return anetaret, me borxhin me te madh ne fillim
+     * @throws SecurityException nese actor s'eshte bibliotekar
+     */
     public List<MemberDebt> getMembersWithUnpaidFines(Person actor) {
         requireLibrarian(actor);
 

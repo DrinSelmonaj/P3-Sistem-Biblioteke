@@ -3,6 +3,10 @@ package org.example.model;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * Rezervim i nje artikulli te zene. Radha FIFO llogaritet nga {@code reservation_date, id};
+ * gjendjet: ne prite → gati per marrje → e permbushur, ose e anuluar.
+ */
 public class Reservation {
     // Njesoj si Loan.id — Integer, null derisa te ruhet ne DB, vendoset vetem nga DAO.
     private Integer id;
@@ -14,6 +18,11 @@ public class Reservation {
     private LocalDateTime readySince; // null derisa te behet ready_for_pickup
     private boolean cancelled;
 
+    /**
+     * @param member          anetari qe rezervon
+     * @param item            artikulli i zene
+     * @param reservationDate data e rezervimit (percakton radhen)
+     */
     public Reservation(Member member, LibraryItem item, LocalDate reservationDate) {
         this.member = member;
         this.item = item;
@@ -23,6 +32,7 @@ public class Reservation {
         this.cancelled = false;
     }
 
+    /** Anetari e huazoi artikullin — rezervimi u konsumua. */
     public void markFulfilled(){
         this.fulfilled = true;
     }
@@ -31,10 +41,10 @@ public class Reservation {
         return fulfilled;
     }
 
-    // "Ready for pickup" = artikulli eshte kthyer dhe eshte mbajtur per kete anetar
-    // specifik (radha FIFO), por anetari ende s'e ka huazuar realisht.
-    // Dallon nga fulfilled: fulfilled do te thote anetari e ka huazuar tashme
-    // (rezervimi eshte "konsumuar" plotesisht).
+    /**
+     * "Gati per marrje": artikulli u kthye dhe mbahet per kete anetar (radha FIFO), por ai
+     * s'e ka huazuar ende. Ndryshe nga fulfilled, qe do te thote se e ka huazuar tashme.
+     */
     public void markReadyForPickup() {
         this.readyForPickup = true;
         this.readySince = LocalDateTime.now();
@@ -43,6 +53,7 @@ public class Reservation {
         return readyForPickup;
     }
 
+    /** Anulim vullnetar ose skadim — rezervimi s'eshte me gati per marrje. */
     public void markCancelled() {
         this.cancelled = true;
         this.readyForPickup = false;

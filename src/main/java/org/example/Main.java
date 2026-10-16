@@ -14,6 +14,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.sql.SQLException;
 
+/**
+ * Pika hyrese e aplikacionit CLI: lidh DAO-t dhe service-t, nis scheduler-in e
+ * rezervimeve dhe shfaq menune sipas rolit (anetar ose bibliotekar).
+ */
 public class Main {
 
     // Kapitulli 7 — afati i biznesit (sa dite ka anetari per te marre nje rezervim
@@ -24,6 +28,7 @@ public class Main {
     private static final int PICKUP_DAYS_ALLOWED = 3;
     private static final int SCHEDULER_INTERVAL_SECONDS = 30;
 
+    /** @param args s'perdoren */
     public static void main(String[] args) {
         // --- Wiring i DAO-ve ---
         MemberDAO memberDAO = new MemberDAOImpl();

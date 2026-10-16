@@ -132,7 +132,7 @@ public class ReservationDAOImpl implements ReservationDAO {
         // renditur sipas reservation_date ASC. Elementi i pare i listes = radhes.
         String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup, ready_since, cancelled " +
                 "FROM reservations WHERE item_id = ? AND fulfilled = false AND cancelled = false " +
-                "ORDER BY reservation_date ASC";
+                "ORDER BY reservation_date ASC, id ASC"; // e njejta radhe si service-t (id per te njejten dite)
 
         List<Reservation> queue = new ArrayList<>();
 
@@ -153,7 +153,7 @@ public class ReservationDAOImpl implements ReservationDAO {
     public List<Reservation> findActiveByMember(String memberId) {
         String sql = "SELECT id, member_id, item_id, reservation_date, fulfilled, ready_for_pickup, ready_since, cancelled " +
                 "FROM reservations WHERE member_id = ? AND fulfilled = false AND cancelled = false " +
-                "ORDER BY reservation_date ASC";
+                "ORDER BY reservation_date ASC, id ASC"; // e njejta radhe si service-t (id per te njejten dite)
 
         List<Reservation> reservations = new ArrayList<>();
 

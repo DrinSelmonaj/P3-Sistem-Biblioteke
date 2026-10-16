@@ -18,18 +18,42 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
+/**
+ * Huazimi dhe kthimi i artikujve. Cdo veprim eshte nje transaksion i vetem me
+ * {@code SELECT ... FOR UPDATE}, qe dy kerkesa njekohesisht te mos e huazojne te njejtin
+ * artikull dhe radha e rezervimeve te mbetet e sakte.
+ */
 public class LoanService {
 
     private final MemberDAO memberDAO;
     private final BookDAO bookDAO;
     private final DVDDAO dvdDAO;
 
+    /**
+     * @param memberDAO per te ngarkuar anetarin
+     * @param bookDAO   per te gjetur artikullin si liber
+     * @param dvdDAO    per te gjetur artikullin si DVD
+     */
     public LoanService(MemberDAO memberDAO, BookDAO bookDAO, DVDDAO dvdDAO) {
         this.memberDAO = memberDAO;
         this.bookDAO = bookDAO;
         this.dvdDAO = dvdDAO;
     }
 
+    /**
+     * Regjistron huazim. Lejohet kur artikulli eshte i lire, ose kur eshte "gati per marrje"
+     * per pikerisht kete anetar (rezervimi i tij behet i permbushur).
+     *
+     * @param actor    anetari vete, ose bibliotekar qe huazon ne emer te anetarit
+     * @param memberId anetari qe merr artikullin
+     * @param itemId   artikulli
+     * @return huazimi i ruajtur, me afatin sipas tipit (21 dite liber, 7 dite DVD)
+     * @throws SecurityException        nese anetari huazon per dike tjeter
+     * @throws IllegalArgumentException nese anetari ose artikulli s'ekziston
+     * @throws IllegalStateException    nese artikulli s'eshte i disponueshem, eshte rezervuar per
+     *                                  dike tjeter, anetari ka gjoba te papaguara ose ka arritur
+     *                                  kufirin e huazimeve aktive
+     */
     public Loan borrowItem(Person actor, String memberId, String itemId) {
         if (!actor.canManageInventory() && !actor.getId().equals(memberId)) {
             throw new SecurityException("Mund te huazosh vetem per vete.");
@@ -89,7 +113,18 @@ public class LoanService {
         }
     }
 
-    // Kthen shumen e gjobes se krijuar automatikisht (0.0 nese s'ka vonese).
+    /**
+     * Regjistron kthimin. Nese ka radhe rezervimesh, artikulli mbahet per te parin ne radhe
+     * ("gati per marrje"); perndryshe behet i lire. Kthimi me vonese krijon automatikisht
+     * gjobe ne te njejtin transaksion.
+     *
+     * @param actor  anetari qe kthen huazimin e vet, ose bibliotekar
+     * @param loanId ID-ja e huazimit
+     * @return shuma e gjobes se krijuar automatikisht (0.0 nese s'ka vonese)
+     * @throws SecurityException        nese anetari kthen huazimin e dikujt tjeter
+     * @throws IllegalArgumentException nese huazimi s'ekziston
+     * @throws IllegalStateException    nese huazimi eshte kthyer tashme
+     */
     public double returnItem(Person actor, int loanId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
