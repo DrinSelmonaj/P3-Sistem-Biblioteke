@@ -28,13 +28,16 @@ Aplikacion CLI në Java për menaxhimin e një biblioteke: huazime, kthime, reze
 ## Arkitektura
 
 ```
-Main (CLI, menu sipas rolit)
-  └── service/   LoanService, FineService, ReservationService, InventoryService, ReportService, AuthService
-        └── dao/      interface + Impl për çdo entitet (JDBC, PreparedStatement)
-              └── util/DBConnection   lexon config.properties, lidhje e re për çdo thirrje
-  └── client/    OpenLibraryClient (HttpClient + Jackson)
+Main            lidh objektet, nis scheduler-in, zgjedh menunë sipas rolit
+  └── cli/       AuthMenu · MemberMenu · LibrarianMenu · InventoryMenu  (+ ConsoleIO, ConsoleViews)
+        └── service/   LoanService, FineService, ReservationService, InventoryService, ReportService, AuthService
+              └── dao/      interface + Impl për çdo entitet (JDBC, PreparedStatement)
+                    └── util/DBConnection   lexon config.properties, lidhje e re për çdo thirrje
+        └── client/    OpenLibraryClient (HttpClient + Jackson)
 model/  LibraryItem → Book, DVD   ·   Person → Member, Librarian   ·   Loan, Fine, Reservation
 ```
+
+Menutë vetëm lexojnë input-in dhe shfaqin rezultatin; çdo rregull biznesi (autorizimi, validimi, transaksionet) është te `service/`.
 
 Hierarkitë e trashëgimisë ruhen në DB me **Class Table Inheritance**: `library_items` + `books`/`dvds`, `persons` + `members`/`librarians`.
 
