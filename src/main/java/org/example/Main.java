@@ -321,6 +321,14 @@ public class Main {
         return cause instanceof SQLException sqlEx && "23505".equals(sqlEx.getSQLState());
     }
 
+    // I perbashket per kthimin nga anetari dhe nga bibliotekari — gjoba krijohet
+    // automatikisht nga LoanService.returnItem(), ketu vetem njoftohet.
+    private static void printOverdueFine(double fineAmount) {
+        if (fineAmount > 0) {
+            System.out.printf("Kthim me vonese — u krijua gjobe prej %.2f €. Huazimet e reja bllokohen derisa te paguhet.%n", fineAmount);
+        }
+    }
+
     // Ndihmes i perbashket per opsionet "6" dhe "8" — shfaq rezervimet aktive te
     // anetarit me status te qarte (gati per marrje / ne prite), qe te dyja opsionet
     // (shiko / anulo) te kene te njejtin format shfaqjeje.
@@ -392,8 +400,9 @@ public class Main {
                         }
                         System.out.print("ID e huazimit qe do kthesh: ");
                         int loanId = Integer.parseInt(scanner.nextLine().trim());
-                        loanService.returnItem(actor, loanId);
+                        double fine = loanService.returnItem(actor, loanId);
                         System.out.println("Artikulli u kthye me sukses.");
+                        printOverdueFine(fine);
                     }
 
                 } else if (choice.equals("4")) {
@@ -490,8 +499,9 @@ public class Main {
                 } else if (choice.equals("2")) {
                     System.out.print("ID e huazimit: ");
                     int loanId = Integer.parseInt(scanner.nextLine().trim());
-                    loanService.returnItem(actor, loanId);
+                    double fine = loanService.returnItem(actor, loanId);
                     System.out.println("Kthimi u regjistrua me sukses.");
+                    printOverdueFine(fine);
 
                 } else if (choice.equals("3")) {
                     System.out.print("ID e huazimit te vonuar: ");

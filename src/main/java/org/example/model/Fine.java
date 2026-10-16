@@ -23,8 +23,13 @@ public class Fine {
 
     }
     private double  calculateAmount(Loan loan) {
-        return loan.getDaysOverdue() * DAILY_RATE;
+        return amountForDaysOverdue(loan.getDaysOverdue());
+    }
 
+    // Burimi i vetem i tarifes — LoanService e perdor per gjoben automatike ne
+    // kthim, qe 0.50/dite te mos jete e shkruar ne dy vende te ndryshme.
+    public static double amountForDaysOverdue(long daysOverdue) {
+        return daysOverdue > 0 ? daysOverdue * DAILY_RATE : 0.0;
     }
 
     public void markPaid() {

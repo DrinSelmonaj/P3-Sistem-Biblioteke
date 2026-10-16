@@ -47,6 +47,26 @@ public class FineService {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
             try {
+                // Huazimi mund te kete gjobe tashme (automatike ne kthim, ose manuale me
+                // pare) — ngarkohet vetem diferenca, njesoj si LoanService.issueOverdueFine().
+                // FOR UPDATE mbi huazimin: dy gjobitje njekohesisht s'e llogarisin dy here.
+                try (PreparedStatement lock = connection.prepareStatement(
+                        "SELECT id FROM loans WHERE id = ? FOR UPDATE");
+                     PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COALESCE(SUM(amount), 0) FROM fines WHERE loan_id = ?")) {
+                    lock.setInt(1, fine.getLoan().getId());
+                    lock.executeQuery().close();
+                    statement.setInt(1, fine.getLoan().getId());
+                    try (ResultSet result = statement.executeQuery()) {
+                        result.next();
+                        double remaining = fine.getAmount() - result.getDouble(1);
+                        if (remaining <= 0) {
+                            throw new IllegalStateException("Ky huazim eshte gjobitur tashme per te gjitha ditet e vonese.");
+                        }
+                        fine.setAmount(remaining);
+                    }
+                }
+
                 try (PreparedStatement statement = connection.prepareStatement(
                         "INSERT INTO fines (loan_id, amount, issued_date) VALUES (?, ?, ?) RETURNING id")) {
                     statement.setInt(1, fine.getLoan().getId());

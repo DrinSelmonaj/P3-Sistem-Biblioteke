@@ -48,6 +48,40 @@ public class TestData implements AutoCloseable {
         return id;
     }
 
+    public String createLibrarian() throws SQLException {
+        String id = "TEST_L_" + runId + "_" + (counter++);
+        execute("INSERT INTO persons (id, name, email, phone, person_type, password_hash) VALUES (?, ?, ?, NULL, 'LIBRARIAN', 'test-placeholder')",
+                id, "Bibliotekar Test " + id, id + "@test.local");
+        execute("INSERT INTO librarians (person_id, employee_code) VALUES (?, ?)", id, id);
+        personIds.add(id);
+        return id;
+    }
+
+    // Simulon nje huazim te vonuar: afati kaloi para `daysOverdue` ditesh.
+    // (borrowItem() vendos gjithmone sot si date huazimi — ketu e kthejme pas ne kohe.)
+    public void makeOverdue(int loanId, int daysOverdue) throws SQLException {
+        try (Connection connection = DBConnection.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "UPDATE loans SET due_date = CURRENT_DATE - ?, borrow_date = CURRENT_DATE - ? - 21 WHERE id = ?")) {
+            statement.setInt(1, daysOverdue);
+            statement.setInt(2, daysOverdue);
+            statement.setInt(3, loanId);
+            statement.executeUpdate();
+        }
+    }
+
+    public double unpaidFines(String memberId) throws SQLException {
+        try (Connection connection = DBConnection.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                     "SELECT unpaid_fines FROM members WHERE person_id = ?")) {
+            statement.setString(1, memberId);
+            try (var result = statement.executeQuery()) {
+                result.next();
+                return result.getDouble(1);
+            }
+        }
+    }
+
     public void setUnpaidFines(String memberId, double amount) throws SQLException {
         try (Connection connection = DBConnection.getInstance().getConnection();
              PreparedStatement statement = connection.prepareStatement(

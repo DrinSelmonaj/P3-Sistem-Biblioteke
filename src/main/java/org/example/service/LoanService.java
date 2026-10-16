@@ -3,6 +3,7 @@ package org.example.service;
 import org.example.dao.BookDAO;
 import org.example.dao.DVDDAO;
 import org.example.dao.MemberDAO;
+import org.example.model.Fine;
 import org.example.model.LibraryItem;
 import org.example.model.Loan;
 import org.example.model.Member;
@@ -15,6 +16,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 
 public class LoanService {
 
@@ -87,7 +89,8 @@ public class LoanService {
         }
     }
 
-    public void returnItem(Person actor, int loanId) {
+    // Kthen shumen e gjobes se krijuar automatikisht (0.0 nese s'ka vonese).
+    public double returnItem(Person actor, int loanId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {
             connection.setAutoCommit(false);
             try {
@@ -98,13 +101,16 @@ public class LoanService {
                 }
 
                 String itemId = loanInfo.itemId();
+                LocalDate returnDate = LocalDate.now();
 
                 try (PreparedStatement statement = connection.prepareStatement(
                         "UPDATE loans SET return_date = ? WHERE id = ?")) {
-                    statement.setDate(1, Date.valueOf(LocalDate.now()));
+                    statement.setDate(1, Date.valueOf(returnDate));
                     statement.setInt(2, loanId);
                     statement.executeUpdate();
                 }
+
+                double fineAmount = issueOverdueFine(connection, loanId, loanInfo, returnDate);
 
                 Integer nextReservation = lockNextWaitingReservation(connection, itemId);
 
@@ -120,6 +126,7 @@ public class LoanService {
                 }
 
                 connection.commit();
+                return fineAmount;
             } catch (SQLException | RuntimeException e) {
                 connection.rollback();
                 throw e;
@@ -129,6 +136,47 @@ public class LoanService {
         } catch (SQLException e) {
             throw new RuntimeException("Gabim gjate kthimit te huazimit " + loanId, e);
         }
+    }
+
+    // Gjoba automatike per kthim te vonuar — brenda te njejtit transaksion si kthimi,
+    // qe s'mund te ndodhe "kthim pa gjobe" nese dicka deshton ne mes.
+    //
+    // PSE zbritet gjoba ekzistuese: bibliotekari mund ta kete gjobitur huazimin
+    // manualisht ndersa ishte ende aktiv. Ngarkohet vetem diferenca deri ne diten
+    // e kthimit — anetari s'paguan dy here per te njejtat dite vonese.
+    private double issueOverdueFine(Connection connection, int loanId, ActiveLoanInfo loanInfo,
+                                    LocalDate returnDate) throws SQLException {
+        long daysOverdue = ChronoUnit.DAYS.between(loanInfo.dueDate(), returnDate);
+        double totalDue = Fine.amountForDaysOverdue(daysOverdue);
+        if (totalDue <= 0) return 0.0;
+
+        double alreadyFined;
+        try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT COALESCE(SUM(amount), 0) FROM fines WHERE loan_id = ?")) {
+            statement.setInt(1, loanId);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                alreadyFined = result.getDouble(1);
+            }
+        }
+
+        double amount = totalDue - alreadyFined;
+        if (amount <= 0) return 0.0;
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "INSERT INTO fines (loan_id, amount, issued_date) VALUES (?, ?, ?)")) {
+            statement.setInt(1, loanId);
+            statement.setDouble(2, amount);
+            statement.setDate(3, Date.valueOf(returnDate));
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE members SET unpaid_fines = unpaid_fines + ? WHERE person_id = ?")) {
+            statement.setDouble(1, amount);
+            statement.setString(2, loanInfo.memberId());
+            statement.executeUpdate();
+        }
+        return amount;
     }
 
     private boolean lockAndReadAvailability(Connection connection, String itemId) throws SQLException {
@@ -177,12 +225,13 @@ public class LoanService {
 
     private ActiveLoanInfo lockActiveLoanAndGetItem(Connection connection, int loanId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT item_id, member_id, return_date FROM loans WHERE id = ? FOR UPDATE")) {
+                "SELECT item_id, member_id, due_date, return_date FROM loans WHERE id = ? FOR UPDATE")) {
             statement.setInt(1, loanId);
             try (ResultSet result = statement.executeQuery()) {
                 if (!result.next()) throw new IllegalArgumentException("Huazimi me ID " + loanId + " nuk u gjet.");
                 if (result.getDate("return_date") != null) throw new IllegalStateException("Huazimi eshte kthyer tashme.");
-                return new ActiveLoanInfo(result.getString("item_id"), result.getString("member_id"));
+                return new ActiveLoanInfo(result.getString("item_id"), result.getString("member_id"),
+                        result.getDate("due_date").toLocalDate());
             }
         }
     }
@@ -212,5 +261,5 @@ public class LoanService {
                 .orElseThrow(() -> new IllegalArgumentException("Artikulli me ID " + itemId + " nuk u gjet."));
     }
 
-    private record ActiveLoanInfo(String itemId, String memberId) {}
+    private record ActiveLoanInfo(String itemId, String memberId, LocalDate dueDate) {}
 }
