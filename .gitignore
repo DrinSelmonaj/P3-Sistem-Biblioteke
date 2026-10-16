@@ -40,3 +40,6 @@ build/
 
 # Konfigurimi lokal i databazes - permban credentials, s'shkon ne GitHub
 src/main/resources/config.properties
+
+### IntelliJ — e gjithe dosja, jo vetem disa skedare ###
+.idea/

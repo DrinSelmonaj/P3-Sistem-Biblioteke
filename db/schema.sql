@@ -55,7 +55,11 @@ CREATE TABLE reservations (
                               item_id VARCHAR(50) NOT NULL REFERENCES library_items(id),
                               reservation_date DATE NOT NULL,
                               fulfilled BOOLEAN NOT NULL DEFAULT false,
-                              ready_for_pickup BOOLEAN NOT NULL DEFAULT false
+                              ready_for_pickup BOOLEAN NOT NULL DEFAULT false,
+                              -- Kapitulli 7: kur rezervimi u be "gati per marrje" (per skadimin
+                              -- automatik nga scheduler-i) dhe anulimi vullnetar/i skaduar
+                              ready_since TIMESTAMP,
+                              cancelled BOOLEAN NOT NULL DEFAULT false
 );
 
 CREATE TABLE fines (
