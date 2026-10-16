@@ -85,16 +85,33 @@ public class DVDDAOImpl implements DVDDAO {
         }
     }
     @Override
+    // I njejti rregull si BookDAOImpl.update(): s'prek `available` (shih komentin atje).
     public void update(DVD dvd) {
-        String sql = "UPDATE library_items SET title = ?, category = ?, available = ? WHERE id = ?";
-        try (Connection conn = DBConnection.getInstance().getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, dvd.getTitle());
-            stmt.setString(2, dvd.getCategory().name());
-            stmt.setBoolean(3, dvd.isAvailable());
-            stmt.setString(4, dvd.getId());
-            stmt.executeUpdate();
+        String updateItem = "UPDATE library_items SET title = ?, category = ? WHERE id = ? AND item_type = 'DVD'";
+        String updateDvd = "UPDATE dvds SET duration_minutes = ? WHERE item_id = ?";
+        try (Connection conn = DBConnection.getInstance().getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement stmt = conn.prepareStatement(updateItem)) {
+                    stmt.setString(1, dvd.getTitle());
+                    stmt.setString(2, dvd.getCategory().name());
+                    stmt.setString(3, dvd.getId());
+                    if (stmt.executeUpdate() != 1) {
+                        throw new IllegalArgumentException("DVD-ja me ID " + dvd.getId() + " nuk u gjet.");
+                    }
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(updateDvd)) {
+                    stmt.setInt(1, dvd.getDurationMinutes());
+                    stmt.setString(2, dvd.getId());
+                    stmt.executeUpdate();
+                }
+                conn.commit();
+            } catch (SQLException | RuntimeException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Gabim gjate azhurimit të DVD-it", e);
         }

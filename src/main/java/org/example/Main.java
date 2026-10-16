@@ -41,6 +41,7 @@ public class Main {
         ReservationService reservationService = new ReservationService();
         ReportService reportService = new ReportService();
         OpenLibraryClient openLibraryClient = new OpenLibraryClient();
+        InventoryService inventoryService = new InventoryService(bookDAO, dvdDAO);
 
         // --- Scheduler per skadimin e rezervimeve "ready_for_pickup" ---
         // Thread daemon (setDaemon(true)) — kjo eshte pika kyçe: nese do ishte
@@ -103,7 +104,8 @@ public class Main {
         // --- Dallimi i menuse sipas rolit — perdor te njejten metode polimorfike
         // qe perdoret per autorizim ne LoanService/FineService (canManageInventory()).
         if (loggedInUser.canManageInventory()) {
-            librarianMenu(scanner, loggedInUser, loanService, fineService, reportService, openLibraryClient, loanDAO, bookDAO, dvdDAO);
+            librarianMenu(scanner, loggedInUser, loanService, fineService, reportService, openLibraryClient,
+                    inventoryService, loanDAO, bookDAO, dvdDAO);
         } else {
             memberMenu(scanner, loggedInUser, loanService, fineService, reservationService,
                     loanDAO, reservationDAO, bookDAO, dvdDAO);
@@ -216,7 +218,8 @@ public class Main {
     // Kerkon ne Open Library, lejon Librarian te zgjedhe nje rezultat, dhe krijon
     // nje Book te ri lokal me te dhenat e marra + detajet qe mungojne (ID lokale,
     // kategoria, dhe ISBN manual nese Open Library s'e ka dhene).
-    private static void importFromOpenLibrary(Scanner scanner, OpenLibraryClient client, BookDAO bookDAO) {
+    private static void importFromOpenLibrary(Scanner scanner, Person actor, OpenLibraryClient client,
+                                              InventoryService inventoryService) {
         System.out.print("Kerko liber (titull): ");
         String query = scanner.nextLine().trim();
         if (query.isEmpty()) {
@@ -267,59 +270,45 @@ public class Main {
             System.out.print("Open Library s'ka ISBN per kete liber. Fute ISBN manualisht: ");
             isbn = scanner.nextLine().trim();
         }
-        // NOT NULL s'e ndalon "" — pa kete kontroll nje ISBN bosh do ruhej,
-        // dhe importi i radhes pa ISBN do deshtonte me "duplicate key".
-        if (isbn.isEmpty()) {
-            System.out.println("ISBN s'mund te jete bosh. Importi u anulua.");
-            return;
-        }
-
         System.out.print("ID lokale per librin (p.sh. B020): ");
         String id = scanner.nextLine().trim();
-        if (id.isEmpty()) {
-            System.out.println("ID s'mund te jete bosh. Importi u anulua.");
-            return;
-        }
 
+        Category category = readCategory(scanner, null);
+        if (category == null) return;
+
+        // Validimi (ID/ISBN bosh, ISBN e pavlefshme, dublikatat) behet nga InventoryService —
+        // i njejti rregull per importin dhe per shtimin manual.
+        try {
+            Book book = inventoryService.addBook(actor, id, selected.title(), category, selected.author(), isbn);
+            System.out.println("Libri u importua me sukses: " + book.getId() + " — " + book.getTitle());
+        } catch (IllegalArgumentException e) {
+            System.out.println("Importi u anulua: " + e.getMessage());
+        }
+    }
+
+    // Shfaq kategorite e numeruara dhe kthen zgjedhjen. `current` != null → Enter
+    // e mban kategorine aktuale (perdoret gjate ndryshimit te artikullit).
+    // Kthen null nese zgjedhja eshte e pavlefshme (thirresi e anulon veprimin).
+    private static Category readCategory(Scanner scanner, Category current) {
         System.out.println("--- Kategoria ---");
         Category[] categories = Category.values();
         for (int i = 0; i < categories.length; i++) {
             System.out.println("  " + (i + 1) + ") " + categories[i].getDisplayName());
         }
-        System.out.print("Zgjidh kategorine: ");
-        int categoryChoice;
+        System.out.print(current == null ? "Zgjidh kategorine: "
+                : "Zgjidh kategorine [Enter = " + current.getDisplayName() + "]: ");
+        String input = scanner.nextLine().trim();
+        if (input.isEmpty() && current != null) return current;
         try {
-            categoryChoice = Integer.parseInt(scanner.nextLine().trim());
-            if (categoryChoice < 1 || categoryChoice > categories.length) {
-                System.out.println("Numer i pavlefshem.");
-                return;
-            }
-        } catch (NumberFormatException e) {
-            System.out.println("Gabim: duhej nje numer.");
-            return;
+            int choice = Integer.parseInt(input);
+            if (choice >= 1 && choice <= categories.length) return categories[choice - 1];
+        } catch (NumberFormatException ignored) {
+            // trajtohet njesoj si numer jashte kufijve, me poshte
         }
-        Category category = categories[categoryChoice - 1];
-
-        try {
-            Book book = new Book(id, selected.title(), category, selected.author(), isbn);
-            bookDAO.save(book);
-            System.out.println("Libri u importua me sukses: " + book.getId() + " — " + book.getTitle());
-        } catch (RuntimeException e) {
-            if (isDuplicateKey(e)) {
-                System.out.println("ID ose ISBN ekziston tashme ne sistem. Provo vlera te tjera.");
-            } else {
-                System.out.println("Gabim gjate importimit: " + e.getMessage());
-            }
-        }
+        System.out.println("Kategori e pavlefshme. Veprimi u anulua.");
+        return null;
     }
 
-    // I njejti pattern si isDuplicateUsername() — SQLState "23505" per shkelje
-    // te PRIMARY KEY/UNIQUE, tani i perdorur gjeneralisht (id ose isbn), jo vetem
-    // per username sign-up.
-    private static boolean isDuplicateKey(Throwable e) {
-        Throwable cause = e.getCause();
-        return cause instanceof SQLException sqlEx && "23505".equals(sqlEx.getSQLState());
-    }
 
     // I perbashket per kthimin nga anetari dhe nga bibliotekari — gjoba krijohet
     // automatikisht nga LoanService.returnItem(), ketu vetem njoftohet.
@@ -471,8 +460,8 @@ public class Main {
 
     private static void librarianMenu(Scanner scanner, Person actor, LoanService loanService,
                                       FineService fineService, ReportService reportService,
-                                      OpenLibraryClient openLibraryClient, LoanDAO loanDAO,
-                                      BookDAO bookDAO, DVDDAO dvdDAO) {
+                                      OpenLibraryClient openLibraryClient, InventoryService inventoryService,
+                                      LoanDAO loanDAO, BookDAO bookDAO, DVDDAO dvdDAO) {
         boolean running = true;
         while (running) {
             System.out.println("\n--- Menuja e Librarianit (" + actor.getName() + ") ---");
@@ -482,7 +471,8 @@ public class Main {
             System.out.println("4. Shiko historine e plote te pagesave");
             System.out.println("5. Raporte");
             System.out.println("6. Importo liber nga Open Library");
-            System.out.println("7. Dil");
+            System.out.println("7. Menaxho inventarin (shto / ndrysho / fshi)");
+            System.out.println("8. Dil");
             System.out.print("Zgjedh: ");
             String choice = scanner.nextLine().trim();
 
@@ -528,9 +518,12 @@ public class Main {
                     printReports(reportService, actor);
 
                 } else if (choice.equals("6")) {
-                    importFromOpenLibrary(scanner, openLibraryClient, bookDAO);
+                    importFromOpenLibrary(scanner, actor, openLibraryClient, inventoryService);
 
                 } else if (choice.equals("7")) {
+                    inventoryMenu(scanner, actor, inventoryService, bookDAO, dvdDAO);
+
+                } else if (choice.equals("8")) {
                     running = false;
 
                 } else {
@@ -541,6 +534,131 @@ public class Main {
             } catch (Exception e) {
                 System.out.println("Gabim: " + e.getMessage());
             }
+        }
+    }
+
+    // --- Nenmenuja e inventarit (vetem Librarian) ---
+    // Cdo veprim kalon nga InventoryService, qe ben autorizimin dhe validimin;
+    // ketu vetem lexohet input-i dhe shfaqet rezultati.
+    private static void inventoryMenu(Scanner scanner, Person actor, InventoryService inventory,
+                                      BookDAO bookDAO, DVDDAO dvdDAO) {
+        while (true) {
+            System.out.println("\n--- Inventari ---");
+            System.out.println("1. Shiko katalogun e plote");
+            System.out.println("2. Shto liber");
+            System.out.println("3. Shto DVD");
+            System.out.println("4. Ndrysho nje artikull");
+            System.out.println("5. Fshi nje artikull");
+            System.out.println("6. Kthehu");
+            System.out.print("Zgjedh: ");
+            String choice = scanner.nextLine().trim();
+
+            try {
+                if (choice.equals("1")) {
+                    printFullCatalog(bookDAO, dvdDAO);
+
+                } else if (choice.equals("2")) {
+                    System.out.print("ID (p.sh. B020): ");
+                    String id = scanner.nextLine();
+                    System.out.print("Titulli: ");
+                    String title = scanner.nextLine();
+                    System.out.print("Autori: ");
+                    String author = scanner.nextLine();
+                    System.out.print("ISBN (10 ose 13 shifra): ");
+                    String isbn = scanner.nextLine();
+                    Category category = readCategory(scanner, null);
+                    if (category == null) continue;
+                    Book book = inventory.addBook(actor, id, title, category, author, isbn);
+                    System.out.println("Libri u shtua: " + book.getId() + " — " + book.getTitle());
+
+                } else if (choice.equals("3")) {
+                    System.out.print("ID (p.sh. D010): ");
+                    String id = scanner.nextLine();
+                    System.out.print("Titulli: ");
+                    String title = scanner.nextLine();
+                    System.out.print("Kohezgjatja (minuta): ");
+                    int duration = Integer.parseInt(scanner.nextLine().trim());
+                    Category category = readCategory(scanner, null);
+                    if (category == null) continue;
+                    DVD dvd = inventory.addDVD(actor, id, title, category, duration);
+                    System.out.println("DVD-ja u shtua: " + dvd.getId() + " — " + dvd.getTitle());
+
+                } else if (choice.equals("4")) {
+                    printFullCatalog(bookDAO, dvdDAO);
+                    System.out.print("ID e artikullit qe do ndryshosh: ");
+                    String id = scanner.nextLine().trim();
+                    LibraryItem item = inventory.findItem(id)
+                            .orElseThrow(() -> new IllegalArgumentException("Artikulli me ID " + id + " nuk u gjet."));
+                    System.out.println("(Enter = mban vleren aktuale)");
+                    String title = readOrKeep(scanner, "Titulli", item.getTitle());
+
+                    if (item instanceof Book book) {
+                        String author = readOrKeep(scanner, "Autori", book.getAuthor());
+                        String isbn = readOrKeep(scanner, "ISBN", book.getIsbn());
+                        Category category = readCategory(scanner, book.getCategory());
+                        if (category == null) continue;
+                        inventory.updateBook(actor, id, title, category, author, isbn);
+                    } else if (item instanceof DVD dvd) {
+                        String duration = readOrKeep(scanner, "Kohezgjatja (minuta)", String.valueOf(dvd.getDurationMinutes()));
+                        Category category = readCategory(scanner, dvd.getCategory());
+                        if (category == null) continue;
+                        inventory.updateDVD(actor, id, title, category, Integer.parseInt(duration));
+                    }
+                    System.out.println("Artikulli u perditesua.");
+
+                } else if (choice.equals("5")) {
+                    printFullCatalog(bookDAO, dvdDAO);
+                    System.out.print("ID e artikullit qe do fshish: ");
+                    String id = scanner.nextLine().trim();
+                    LibraryItem item = inventory.findItem(id)
+                            .orElseThrow(() -> new IllegalArgumentException("Artikulli me ID " + id + " nuk u gjet."));
+                    // Konfirmim eksplicit — fshirja s'mund te zhbehet
+                    System.out.print("Fshi \"" + item.getTitle() + "\"? Shkruaj PO per te konfirmuar: ");
+                    if (!scanner.nextLine().trim().equalsIgnoreCase("PO")) {
+                        System.out.println("Fshirja u anulua.");
+                        continue;
+                    }
+                    inventory.deleteItem(actor, id);
+                    System.out.println("Artikulli u fshi.");
+
+                } else if (choice.equals("6")) {
+                    return;
+
+                } else {
+                    System.out.println("Zgjedhje e panjohur.");
+                }
+            } catch (NumberFormatException e) {
+                System.out.println("Gabim: duhej nje numer.");
+            } catch (Exception e) {
+                System.out.println("Gabim: " + e.getMessage());
+            }
+        }
+    }
+
+    // Enter bosh → mban vleren aktuale; perdoret te "Ndrysho artikull"
+    private static String readOrKeep(Scanner scanner, String label, String current) {
+        System.out.print(label + " [" + current + "]: ");
+        String input = scanner.nextLine().trim();
+        return input.isEmpty() ? current : input;
+    }
+
+    // Katalogu i plote per bibliotekarin — me tip, status dhe detajet specifike
+    private static void printFullCatalog(BookDAO bookDAO, DVDDAO dvdDAO) {
+        System.out.println("--- Katalogu ---");
+        List<Book> books = bookDAO.findAll();
+        List<DVD> dvds = dvdDAO.findAll();
+        if (books.isEmpty() && dvds.isEmpty()) {
+            System.out.println("  (katalogu eshte bosh)");
+            return;
+        }
+        for (Book book : books) {
+            System.out.println("  " + book.getId() + " — " + book.getTitle() + " | " + book.getAuthor()
+                    + " | ISBN " + book.getIsbn() + " | " + book.getCategory().getDisplayName()
+                    + " | " + (book.isAvailable() ? "i lire" : "i zene"));
+        }
+        for (DVD dvd : dvds) {
+            System.out.println("  " + dvd.getId() + " — " + dvd.getTitle() + " (DVD, " + dvd.getDurationMinutes()
+                    + " min) | " + dvd.getCategory().getDisplayName() + " | " + (dvd.isAvailable() ? "i lire" : "i zene"));
         }
     }
 }

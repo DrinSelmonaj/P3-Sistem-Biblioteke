@@ -92,18 +92,39 @@ public class BookDAOImpl implements BookDAO {
     }
 
     @Override
+    // Perditeson te dhenat pershkruese (titull, kategori, autor, ISBN) ne te dyja
+    // tabelat, ne nje transaksion. QELLIMISHT s'prek `available`: disponueshmeria
+    // ndryshohet vetem nga LoanService/ReservationService brenda transaksioneve te
+    // tyre — nje objekt Book i lexuar para nje huazimi do ta kthente artikullin
+    // gabimisht ne "i disponueshem" dhe dy anetare do ta huazonin njekohesisht.
     public void update(Book book) {
-        String sql = "UPDATE library_items SET title = ?, category = ?, available = ? WHERE id = ?";
+        String updateItem = "UPDATE library_items SET title = ?, category = ? WHERE id = ? AND item_type = 'BOOK'";
+        String updateBook = "UPDATE books SET author = ?, isbn = ? WHERE item_id = ?";
 
-        try (Connection conn = DBConnection.getInstance().getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            stmt.setString(1, book.getTitle());
-            stmt.setString(2, book.getCategory().name());
-            stmt.setBoolean(3, book.isAvailable());
-            stmt.setString(4, book.getId());
-            stmt.executeUpdate();
-
+        try (Connection conn = DBConnection.getInstance().getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement stmt = conn.prepareStatement(updateItem)) {
+                    stmt.setString(1, book.getTitle());
+                    stmt.setString(2, book.getCategory().name());
+                    stmt.setString(3, book.getId());
+                    if (stmt.executeUpdate() != 1) {
+                        throw new IllegalArgumentException("Libri me ID " + book.getId() + " nuk u gjet.");
+                    }
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(updateBook)) {
+                    stmt.setString(1, book.getAuthor());
+                    stmt.setString(2, book.getIsbn());
+                    stmt.setString(3, book.getId());
+                    stmt.executeUpdate();
+                }
+                conn.commit();
+            } catch (SQLException | RuntimeException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
         } catch (SQLException e) {
             throw new RuntimeException("Gabim gjate perditesimit te librit: " + book.getId(), e);
         }

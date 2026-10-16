@@ -48,6 +48,20 @@ public class TestData implements AutoCloseable {
         return id;
     }
 
+    // ID per nje artikull qe do ta krijoje vete kodi qe testohet (p.sh. InventoryService) —
+    // regjistrohet qe ne cleanup() te fshihet edhe ai.
+    public String reserveItemId() {
+        String id = "TEST_I_" + runId + "_" + (counter++);
+        itemIds.add(id);
+        return id;
+    }
+
+    // ISBN-13 unike per ekzekutim — books.isbn eshte UNIQUE
+    public String uniqueIsbn() {
+        long n = (System.nanoTime() + counter++) % 1_000_000_000L;
+        return String.format("979%010d", n);
+    }
+
     public String createLibrarian() throws SQLException {
         String id = "TEST_L_" + runId + "_" + (counter++);
         execute("INSERT INTO persons (id, name, email, phone, person_type, password_hash) VALUES (?, ?, ?, NULL, 'LIBRARIAN', 'test-placeholder')",
