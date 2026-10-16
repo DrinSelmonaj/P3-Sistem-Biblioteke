@@ -108,6 +108,16 @@ public class TestData implements AutoCloseable {
         }
     }
 
+    public boolean personExists(String personId) throws SQLException {
+        try (Connection connection = DBConnection.getInstance().getConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM persons WHERE id = ?")) {
+            statement.setString(1, personId);
+            try (var result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
     public void setUnpaidFines(String memberId, double amount) throws SQLException {
         try (Connection connection = DBConnection.getInstance().getConnection();
              PreparedStatement statement = connection.prepareStatement(

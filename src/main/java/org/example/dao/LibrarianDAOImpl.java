@@ -93,7 +93,8 @@ public class LibrarianDAOImpl implements LibrarianDAO {
     }
     @Override
     public void update(Librarian librarian) {
-        String sql = "UPDATE librarians SET employee_code = ? WHERE id = ?";
+        // librarians s'ka kolone `id` — celesi eshte person_id (Class Table Inheritance)
+        String sql = "UPDATE librarians SET employee_code = ? WHERE person_id = ?";
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, librarian.getEmployeeCode());
@@ -109,7 +110,10 @@ public class LibrarianDAOImpl implements LibrarianDAO {
     }
     @Override
     public void delete(String id) {
-        String sql = "DELETE FROM librarians WHERE person_id = ?";
+        // Fshihet nga persons (ON DELETE CASCADE → librarians), njesoj si MemberDAOImpl.
+        // Fshirja vetem nga librarians linte nje rresht persons me person_type LIBRARIAN
+        // pa nentip — llogari "jetime" qe s'mund te kycej dhe s'shfaqej askund.
+        String sql = "DELETE FROM persons WHERE id = ? AND person_type = 'LIBRARIAN'";
         try (Connection conn = DBConnection.getInstance().getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, id);
