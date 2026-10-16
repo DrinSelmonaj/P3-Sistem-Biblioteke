@@ -102,6 +102,106 @@ public class ReservationService {
         }
     }
 
+    // Rezultati i rezervimit: id-ja e re + pozicioni ne radhe (1 = i pari qe e merr).
+    public record ReservationResult(int reservationId, int queuePosition) {}
+
+    // Krijon rezervim per nje artikull qe aktualisht s'eshte i disponueshem.
+    // Autorizim: Member rezervon VETEM per vete; Librarian per cilindo — njesoj si borrowItem().
+    //
+    // PSE FOR UPDATE mbi library_items: dy kerkesa njekohesisht per te njejtin
+    // artikull serializohen ketu, keshtu qe kontrolli "a ke rezervim aktiv tashme?"
+    // s'mund te kalohet nga dy thread-e njeheresh (s'krijohen dy rezervime te njejta).
+    public ReservationResult reserveItem(Person actor, String memberId, String itemId) {
+        if (!actor.canManageInventory() && !actor.getId().equals(memberId)) {
+            throw new SecurityException("Mund te rezervosh vetem per vete.");
+        }
+
+        try (Connection connection = DBConnection.getInstance().getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT available FROM library_items WHERE id = ? FOR UPDATE")) {
+                    statement.setString(1, itemId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        if (!result.next()) throw new IllegalArgumentException("Artikulli me ID " + itemId + " nuk u gjet.");
+                        // Rezervimi ka kuptim vetem kur artikulli eshte i zene — perndryshe
+                        // anetari do te priste ne radhe per dicka qe mund ta marre tani.
+                        if (result.getBoolean("available")) {
+                            throw new IllegalStateException("Artikulli eshte i disponueshem — huazoje direkt.");
+                        }
+                    }
+                }
+
+                // Gjobat e papaguara bllokojne huazimin; po te lejonim rezervimin, anetari
+                // do te zinte radhen per nje artikull qe s'do te mund ta merrte kurre.
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT unpaid_fines FROM members WHERE person_id = ?")) {
+                    statement.setString(1, memberId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        if (!result.next()) throw new IllegalArgumentException("Anetari me ID " + memberId + " nuk u gjet.");
+                        if (result.getDouble("unpaid_fines") > 0) {
+                            throw new IllegalStateException("Anetari ka gjoba te papaguara.");
+                        }
+                    }
+                }
+
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT 1 FROM loans WHERE member_id = ? AND item_id = ? AND return_date IS NULL")) {
+                    statement.setString(1, memberId);
+                    statement.setString(2, itemId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        if (result.next()) throw new IllegalStateException("Ke tashme kete artikull te huazuar.");
+                    }
+                }
+
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT 1 FROM reservations WHERE member_id = ? AND item_id = ? " +
+                                "AND fulfilled = false AND cancelled = false")) {
+                    statement.setString(1, memberId);
+                    statement.setString(2, itemId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        if (result.next()) throw new IllegalStateException("Ke tashme nje rezervim aktiv per kete artikull.");
+                    }
+                }
+
+                int reservationId;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "INSERT INTO reservations (member_id, item_id, reservation_date) " +
+                                "VALUES (?, ?, CURRENT_DATE) RETURNING id")) {
+                    statement.setString(1, memberId);
+                    statement.setString(2, itemId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        result.next();
+                        reservationId = result.getInt("id");
+                    }
+                }
+
+                // Pozicioni = sa rezervime aktive ka per artikullin (perfshire kete te re,
+                // qe eshte e fundit sipas ORDER BY reservation_date, id te radhes FIFO).
+                int queuePosition;
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM reservations WHERE item_id = ? AND fulfilled = false AND cancelled = false")) {
+                    statement.setString(1, itemId);
+                    try (ResultSet result = statement.executeQuery()) {
+                        result.next();
+                        queuePosition = result.getInt(1);
+                    }
+                }
+
+                connection.commit();
+                return new ReservationResult(reservationId, queuePosition);
+
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate krijimit te rezervimit", e);
+        }
+    }
+
     // Autorizim: Member mund te anuloje VETEM rezervimet e veta; Librarian cilendo.
     public void cancelReservation(Person actor, int reservationId) {
         try (Connection connection = DBConnection.getInstance().getConnection()) {

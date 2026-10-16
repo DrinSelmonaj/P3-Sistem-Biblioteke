@@ -46,7 +46,7 @@ public class LoanService {
                 validateMemberCanBorrow(connection, memberId);
 
                 if (!available && readyReservationId == null) {
-                    throw new IllegalStateException("Artikulli " + itemId + " s'eshte i disponueshem per huazim.");
+                    throw new IllegalStateException("Artikulli " + itemId + " s'eshte i disponueshem per huazim — mund ta rezervosh.");
                 }
 
                 Loan loan = new Loan(member, item, today);

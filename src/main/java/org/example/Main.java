@@ -157,29 +157,31 @@ public class Main {
         }
     }
 
-    // Listohen artikujt e disponueshem (ID + titull) — pa kete, anetari do
-    // te duhej te dinte perpara ID-te e librave qe s'i ka pare kurre, gje
-    // qe s'ka logjike per nje perdorues real.
-    private static void printAvailableCatalog(BookDAO bookDAO, DVDDAO dvdDAO) {
-        System.out.println("--- Artikuj te disponueshem ---");
+    // Listohen artikujt (ID + titull) — pa kete, anetari do te duhej te dinte
+    // perpara ID-te e librave qe s'i ka pare kurre, gje qe s'ka logjike per nje
+    // perdorues real. available=true per huazim, false per rezervim (vetem
+    // artikujt e zene mund te rezervohen).
+    private static void printCatalog(BookDAO bookDAO, DVDDAO dvdDAO, boolean available) {
+        System.out.println(available ? "--- Artikuj te disponueshem ---" : "--- Artikuj te zene (mund te rezervohen) ---");
         List<Book> books = bookDAO.findAll();
         List<DVD> dvds = dvdDAO.findAll();
 
-        boolean anyAvailable = false;
+        boolean anyListed = false;
         for (Book book : books) {
-            if (book.isAvailable()) {
+            if (book.isAvailable() == available) {
                 System.out.println("  " + book.getId() + " — " + book.getTitle() + " (Liber)");
-                anyAvailable = true;
+                anyListed = true;
             }
         }
         for (DVD dvd : dvds) {
-            if (dvd.isAvailable()) {
+            if (dvd.isAvailable() == available) {
                 System.out.println("  " + dvd.getId() + " — " + dvd.getTitle() + " (DVD)");
-                anyAvailable = true;
+                anyListed = true;
             }
         }
-        if (!anyAvailable) {
-            System.out.println("  (asnje artikull i disponueshem momentalisht)");
+        if (!anyListed) {
+            System.out.println(available ? "  (asnje artikull i disponueshem momentalisht)"
+                                         : "  (asnje artikull i zene — te gjithe mund te huazohen direkt)");
         }
     }
     // Printon te tre raportet njeheresh — permbledhje + me te huazuarit + gjobat.
@@ -319,7 +321,7 @@ public class Main {
         return cause instanceof SQLException sqlEx && "23505".equals(sqlEx.getSQLState());
     }
 
-    // Ndihmes i perbashket per opsionet "6" dhe "7" — shfaq rezervimet aktive te
+    // Ndihmes i perbashket per opsionet "6" dhe "8" — shfaq rezervimet aktive te
     // anetarit me status te qarte (gati per marrje / ne prite), qe te dyja opsionet
     // (shiko / anulo) te kene te njejtin format shfaqjeje.
     private static List<Reservation> printMyReservations(ReservationDAO reservationDAO, String memberId) {
@@ -352,8 +354,9 @@ public class Main {
             System.out.println("4. Shiko gjobat e mia");
             System.out.println("5. Paguaj nje gjobe");
             System.out.println("6. Shiko rezervimet e mia");
-            System.out.println("7. Anulo nje rezervim");
-            System.out.println("8. Dil");
+            System.out.println("7. Rezervo nje artikull te zene");
+            System.out.println("8. Anulo nje rezervim");
+            System.out.println("9. Dil");
             System.out.print("Zgjedh: ");
             String choice = scanner.nextLine().trim();
 
@@ -371,7 +374,7 @@ public class Main {
                     }
 
                 } else if (choice.equals("2")) {
-                    printAvailableCatalog(bookDAO, dvdDAO);
+                    printCatalog(bookDAO, dvdDAO, true);
                     System.out.print("ID e artikullit: ");
                     String itemId = scanner.nextLine().trim();
                     Loan loan = loanService.borrowItem(actor, actor.getId(), itemId);
@@ -426,6 +429,15 @@ public class Main {
                     printMyReservations(reservationDAO, actor.getId());
 
                 } else if (choice.equals("7")) {
+                    printCatalog(bookDAO, dvdDAO, false);
+                    System.out.print("ID e artikullit qe do rezervosh: ");
+                    String itemId = scanner.nextLine().trim();
+                    ReservationService.ReservationResult result =
+                            reservationService.reserveItem(actor, actor.getId(), itemId);
+                    System.out.println("Rezervimi #" + result.reservationId() + " u krijua. Je i "
+                            + result.queuePosition() + "-ti ne radhe — do te njoftohesh kur artikulli te jete gati.");
+
+                } else if (choice.equals("8")) {
                     List<Reservation> reservations = printMyReservations(reservationDAO, actor.getId());
                     if (!reservations.isEmpty()) {
                         System.out.print("ID e rezervimit qe do anulosh: ");
@@ -434,7 +446,7 @@ public class Main {
                         System.out.println("Rezervimi u anulua.");
                     }
 
-                } else if (choice.equals("8")) {
+                } else if (choice.equals("9")) {
                     running = false;
 
                 } else {
@@ -469,7 +481,7 @@ public class Main {
                 if (choice.equals("1")) {
                     System.out.print("ID e anetarit: ");
                     String memberId = scanner.nextLine().trim();
-                    printAvailableCatalog(bookDAO, dvdDAO);
+                    printCatalog(bookDAO, dvdDAO, true);
                     System.out.print("ID e artikullit: ");
                     String itemId = scanner.nextLine().trim();
                     Loan loan = loanService.borrowItem(actor, memberId, itemId);
