@@ -56,6 +56,18 @@ public class TestData implements AutoCloseable {
         return id;
     }
 
+    // Njesoj si reserveItemId(), per persona qe i krijon kodi qe testohet (AuthService)
+    public String reservePersonId() {
+        String id = "TEST_P_" + runId + "_" + (counter++);
+        personIds.add(id);
+        return id;
+    }
+
+    // employee_code eshte UNIQUE dhe max 20 karaktere
+    public String uniqueEmployeeCode() {
+        return "TE" + runId + (counter++);
+    }
+
     // ISBN-13 unike per ekzekutim — books.isbn eshte UNIQUE
     public String uniqueIsbn() {
         long n = (System.nanoTime() + counter++) % 1_000_000_000L;

@@ -3,6 +3,8 @@ package org.example.service;
 import org.example.dao.LibrarianDAO;
 import org.example.dao.MemberDAO;
 
+import org.example.model.Librarian;
+import org.example.model.Member;
 import org.example.model.Person;
 
 import org.example.util.DBConnection;
@@ -70,6 +72,103 @@ public class AuthService {
         }
 
     }
+    static final int MIN_PASSWORD_LENGTH = 8;
+
+    // Sign Up i nje anetari te ri — nuk kerkon actor, cdokush mund te regjistrohet si Member.
+    public Member registerMember(String id, String name, String email, String phone, String rawPassword) {
+        Member member = new Member(validateUsername(id), validateName(name), validateEmail(email), blankToNull(phone));
+        insertPerson(member, "MEMBER", rawPassword,
+                "INSERT INTO members (person_id) VALUES (?)", null);
+        return member;
+    }
+
+    // Vetem nje bibliotekar ekzistues mund te krijoje bibliotekar te ri — perndryshe
+    // cdo anetar do te mund t'i jepte vetes te drejta mbi inventarin dhe gjobat.
+    public Librarian registerLibrarian(Person actor, String id, String name, String email, String phone,
+                                       String employeeCode, String rawPassword) {
+        if (!actor.canManageInventory()) {
+            throw new SecurityException("Vetem bibliotekaret mund te krijojne bibliotekare te rinj.");
+        }
+        if (employeeCode == null || !employeeCode.trim().matches("[A-Za-z0-9_-]{1,20}")) {
+            throw new IllegalArgumentException("Kodi i punonjesit duhet te kete 1-20 shkronja, shifra, _ ose -.");
+        }
+        Librarian librarian = new Librarian(validateUsername(id), validateName(name), validateEmail(email),
+                blankToNull(phone), employeeCode.trim());
+        insertPerson(librarian, "LIBRARIAN", rawPassword,
+                "INSERT INTO librarians (person_id, employee_code) VALUES (?, ?)", librarian.getEmployeeCode());
+        return librarian;
+    }
+
+    // persons + members/librarians + hash-i real ne NJE transaksion.
+    // PSE jo DAO.save() + setPassword(): ato jane dy transaksione — nese i dyti
+    // deshtonte, mbetej nje llogari me hash placeholder ku s'mund te hyhej kurre.
+    private void insertPerson(Person person, String personType, String rawPassword,
+                              String subtypeSql, String employeeCode) {
+        if (rawPassword == null || rawPassword.length() < MIN_PASSWORD_LENGTH) {
+            throw new IllegalArgumentException("Fjalekalimi duhet te kete te pakten " + MIN_PASSWORD_LENGTH + " karaktere.");
+        }
+        String hash = hashPassword(rawPassword);
+
+        try (Connection connection = DBConnection.getInstance().getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "INSERT INTO persons (id, name, email, phone, person_type, password_hash) VALUES (?, ?, ?, ?, ?, ?)")) {
+                    statement.setString(1, person.getId());
+                    statement.setString(2, person.getName());
+                    statement.setString(3, person.getEmail());
+                    statement.setString(4, person.getPhone());
+                    statement.setString(5, personType);
+                    statement.setString(6, hash);
+                    statement.executeUpdate();
+                }
+                try (PreparedStatement statement = connection.prepareStatement(subtypeSql)) {
+                    statement.setString(1, person.getId());
+                    if (employeeCode != null) statement.setString(2, employeeCode);
+                    statement.executeUpdate();
+                }
+                connection.commit();
+            } catch (SQLException e) {
+                connection.rollback();
+                // 23505 = username (persons.id) ose employee_code ekziston tashme
+                if ("23505".equals(e.getSQLState())) {
+                    throw new IllegalArgumentException("Username ose kodi i punonjesit eshte i zene. Provo nje tjeter.");
+                }
+                throw e;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Gabim gjate krijimit te llogarise", e);
+        }
+    }
+
+    private static String validateUsername(String id) {
+        if (id == null || !id.trim().matches("[A-Za-z0-9_.-]{3,50}")) {
+            throw new IllegalArgumentException("Username duhet te kete 3-50 shkronja, shifra, _ . ose -.");
+        }
+        return id.trim();
+    }
+
+    private static String validateName(String name) {
+        if (name == null || name.isBlank() || name.trim().length() > 255) {
+            throw new IllegalArgumentException("Emri s'mund te jete bosh.");
+        }
+        return name.trim();
+    }
+
+    // Kontroll bazik formati — s'garanton qe adresa ekziston
+    private static String validateEmail(String email) {
+        if (email == null || !email.trim().matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+") || email.trim().length() > 255) {
+            throw new IllegalArgumentException("Email i pavlefshem.");
+        }
+        return email.trim();
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     // Perdoret vetem kur krijohet/rivendoset password per nje Person (p.sh. migrim
     // fillestar i te dhenave test, ose nje krijim i ri anetari nga Librarian).
     public static String hashPassword(String rawPassword) {

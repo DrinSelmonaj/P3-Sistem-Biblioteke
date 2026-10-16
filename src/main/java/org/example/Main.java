@@ -94,7 +94,7 @@ public class Main {
                 }
 
             } else if (entryChoice.equals("2")) {
-                loggedInUser = signUp(scanner, console, memberDAO, authService);
+                loggedInUser = signUp(scanner, console, authService);
 
             } else {
                 System.out.println("Zgjedhje e panjohur. Shtyp 1 ose 2.\n");
@@ -105,7 +105,7 @@ public class Main {
         // qe perdoret per autorizim ne LoanService/FineService (canManageInventory()).
         if (loggedInUser.canManageInventory()) {
             librarianMenu(scanner, loggedInUser, loanService, fineService, reportService, openLibraryClient,
-                    inventoryService, loanDAO, bookDAO, dvdDAO);
+                    inventoryService, authService, console, loanDAO, bookDAO, dvdDAO);
         } else {
             memberMenu(scanner, loggedInUser, loanService, fineService, reservationService,
                     loanDAO, reservationDAO, bookDAO, dvdDAO);
@@ -135,7 +135,7 @@ public class Main {
     // eshte llogari pune, jo diçka qe cilido duhet te mund ta krijoje vetem.
     // Kthen null nese regjistrimi deshton (p.sh. ID e zene tashme), jo exception —
     // qe loop-i hyres thjesht ta ripyese perdoruesin, njesoj si login i gabuar.
-    private static Person signUp(Scanner scanner, Console console, MemberDAO memberDAO, AuthService authService) {
+    private static Person signUp(Scanner scanner, Console console, AuthService authService) {
         System.out.println("\n--- Regjistrim Anetari i Ri ---");
         System.out.print("Username (do te perdoret per login): ");
         String id = scanner.nextLine().trim();
@@ -148,10 +148,9 @@ public class Main {
         String password = readPassword(scanner, console);
 
         try {
-            Member newMember = new Member(id, name, email, phone);
-            memberDAO.save(newMember);
-            authService.setPassword(id, password);
-            System.out.println("Regjistrimi u krye me sukses. Mireserdhe, " + name + "!\n");
+            // Nje transaksion i vetem (persons + members + hash) — shih AuthService.insertPerson()
+            Member newMember = authService.registerMember(id, name, email, phone, password);
+            System.out.println("Regjistrimi u krye me sukses. Mireserdhe, " + newMember.getName() + "!\n");
             return newMember;
         } catch (Exception e) {
             System.out.println("Gabim gjate regjistrimit: " + e.getMessage() + "\n");
@@ -461,6 +460,7 @@ public class Main {
     private static void librarianMenu(Scanner scanner, Person actor, LoanService loanService,
                                       FineService fineService, ReportService reportService,
                                       OpenLibraryClient openLibraryClient, InventoryService inventoryService,
+                                      AuthService authService, Console console,
                                       LoanDAO loanDAO, BookDAO bookDAO, DVDDAO dvdDAO) {
         boolean running = true;
         while (running) {
@@ -472,7 +472,8 @@ public class Main {
             System.out.println("5. Raporte");
             System.out.println("6. Importo liber nga Open Library");
             System.out.println("7. Menaxho inventarin (shto / ndrysho / fshi)");
-            System.out.println("8. Dil");
+            System.out.println("8. Shto bibliotekar te ri");
+            System.out.println("9. Dil");
             System.out.print("Zgjedh: ");
             String choice = scanner.nextLine().trim();
 
@@ -524,6 +525,9 @@ public class Main {
                     inventoryMenu(scanner, actor, inventoryService, bookDAO, dvdDAO);
 
                 } else if (choice.equals("8")) {
+                    createLibrarian(scanner, console, actor, authService);
+
+                } else if (choice.equals("9")) {
                     running = false;
 
                 } else {
@@ -534,6 +538,36 @@ public class Main {
             } catch (Exception e) {
                 System.out.println("Gabim: " + e.getMessage());
             }
+        }
+    }
+
+    // Krijon llogari bibliotekari — fjalekalimi kerkohet dy here, sepse ndryshe nga
+    // Sign Up, personi qe e shkruan s'eshte ai qe do ta perdore (s'e sheh gabimin).
+    private static void createLibrarian(Scanner scanner, Console console, Person actor, AuthService authService) {
+        System.out.println("\n--- Bibliotekar i Ri ---");
+        System.out.print("Username: ");
+        String id = scanner.nextLine();
+        System.out.print("Emri: ");
+        String name = scanner.nextLine();
+        System.out.print("Email: ");
+        String email = scanner.nextLine();
+        System.out.print("Telefoni (opsional): ");
+        String phone = scanner.nextLine();
+        System.out.print("Kodi i punonjesit: ");
+        String employeeCode = scanner.nextLine();
+        String password = readPassword(scanner, console);
+        System.out.print("Perserit fjalekalimin. ");
+        String confirm = readPassword(scanner, console);
+
+        if (!password.equals(confirm)) {
+            System.out.println("Fjalekalimet s'perputhen. Llogaria s'u krijua.");
+            return;
+        }
+        try {
+            Librarian librarian = authService.registerLibrarian(actor, id, name, email, phone, employeeCode, password);
+            System.out.println("Bibliotekari " + librarian.getName() + " (" + librarian.getId() + ") u krijua dhe mund te kycet.");
+        } catch (IllegalArgumentException | SecurityException e) {
+            System.out.println("Gabim: " + e.getMessage());
         }
     }
 
