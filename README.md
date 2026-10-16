@@ -7,16 +7,21 @@ Aplikacion CLI në Java për menaxhimin e një biblioteke: huazime, kthime, reze
 ## Funksionalitetet
 
 **Anëtari (Member)**
-- Sign Up dhe login (fjalëkalimet ruhen si hash BCrypt)
+- Sign Up dhe login (fjalëkalimet ruhen si hash BCrypt, minimumi 8 karaktere)
 - Huazim dhe kthim artikujsh (maksimumi 5 huazime aktive njëkohësisht, i bllokuar nëse ka gjoba të papaguara)
 - Shikim dhe pagesë e gjobave
-- Rezervime: kur artikulli kthehet, rezervimi i parë në radhë bëhet "gati për marrje"
+- Rezervim i artikujve të zënë, me radhë FIFO: kur artikulli kthehet, i pari në radhë e merr "gati për marrje"
+- Shikim dhe anulim i rezervimeve
 
 **Bibliotekari (Librarian)**
 - Regjistrim huazimi/kthimi për çdo anëtar
-- Krijim gjobe për huazime të vonuara (0.50 € në ditë)
-- Historia e pagesave dhe raporte
+- Menaxhim inventari: shto, ndrysho dhe fshi libra e DVD (artikujt me histori huazimesh s'fshihen, që raportet të mbeten të sakta)
 - Import librash nga Open Library (kërkim sipas titullit)
+- Krijim gjobe manuale për huazime aktive të vonuara
+- Historia e pagesave dhe raporte
+- Krijim llogarish për bibliotekarë të rinj
+
+**Gjobat:** kthimi me vonesë krijon automatikisht gjobë prej 0.50 € në ditë, në të njëjtin transaksion me kthimin. Nëse bibliotekari e ka gjobitur huazimin më parë, ngarkohet vetëm diferenca.
 
 **Në sfond:** një scheduler kontrollon çdo 30 sekonda rezervimet "gati për marrje" që s'janë marrë brenda 3 ditëve, i anulon dhe ia kalon artikullin anëtarit tjetër në radhë.
 
@@ -24,7 +29,7 @@ Aplikacion CLI në Java për menaxhimin e një biblioteke: huazime, kthime, reze
 
 ```
 Main (CLI, menu sipas rolit)
-  └── service/   LoanService, FineService, ReservationService, ReportService, AuthService
+  └── service/   LoanService, FineService, ReservationService, InventoryService, ReportService, AuthService
         └── dao/      interface + Impl për çdo entitet (JDBC, PreparedStatement)
               └── util/DBConnection   lexon config.properties, lidhje e re për çdo thirrje
   └── client/    OpenLibraryClient (HttpClient + Jackson)
@@ -52,7 +57,7 @@ Plotëso `db.user` dhe `db.password`. `config.properties` është në `.gitignor
 
 ### 3. Llogaria e parë e bibliotekarit
 
-Sign Up krijon vetëm anëtarë, kështu që bibliotekari i parë krijohet direkt në DB. `pgcrypto` prodhon hash BCrypt që e pranon jBCrypt:
+Sign Up krijon vetëm anëtarë, dhe bibliotekarë të rinj mund të krijojë vetëm një bibliotekar ekzistues (menuja → "Shto bibliotekar të ri"). Prandaj i pari krijohet një herë direkt në DB; `pgcrypto` prodhon hash BCrypt që e pranon jBCrypt:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -80,5 +85,9 @@ mvn test
 | `DomainModelTest` | njësie | afati 21-ditor i librit, ditët e vonesës, pagesa e gjobës s'e bën balancën negative |
 | `LoanServiceAuthorizationTest` | integrimi | një anëtar s'mund të kthejë huazimin e një anëtari tjetër |
 | `DBConnectionTest` | integrimi | çdo thirrje merr lidhje të veçantë: mbyllja e njërës s'prish tjetrën |
+| `ReservationServiceTest` | integrimi | radha FIFO nga rezervimi te huazimi; s'lejohen rezervime të dyfishta, për artikuj të lirë ose me gjoba të papaguara |
+| `OverdueFineTest` | integrimi | gjoba automatike në kthim të vonuar; gjoba manuale + automatike s'ngarkojnë dy herë |
+| `InventoryServiceTest` | integrimi | ISBN e normalizuar dhe unike; redaktimi s'e bën "të lirë" një libër të huazuar; artikujt me histori s'fshihen |
+| `AuthServiceTest` | integrimi | vetëm bibliotekarët krijojnë bibliotekarë; krijimi i llogarisë është atomik; validimi i Sign Up |
 
-Testet e integrimit kërkojnë PostgreSQL aktiv me `config.properties` të konfiguruar, dhe anëtarët `M001`, `M002` plus të paktën një libër të disponueshëm në DB.
+Testet e integrimit kërkojnë PostgreSQL aktiv me `config.properties` të konfiguruar. Të dhënat e tyre krijohen me prefiks `TEST_` (`TestData`) dhe fshihen pas çdo testi. `LoanServiceAuthorizationTest` kërkon ende anëtarët `M001`, `M002` dhe të paktën një libër të disponueshëm.
