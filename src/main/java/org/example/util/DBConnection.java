@@ -38,9 +38,12 @@ public class DBConnection {
             throw new RuntimeException("Gabim gjate leximit te config.properties", e);
         }
 
-        this.url = props.getProperty("db.url");
-        this.user = props.getProperty("db.user");
-        this.password = props.getProperty("db.password");
+        // System property (-Ddb.url=...) ka perparesi ndaj config.properties — keshtu
+        // testet mund te xhirojne mbi nje DB te vecante (biblioteka_test) pa ndryshuar
+        // skedarin e konfigurimit: mvn test -Ddb.url=jdbc:postgresql://localhost:5432/biblioteka_test
+        this.url = System.getProperty("db.url", props.getProperty("db.url"));
+        this.user = System.getProperty("db.user", props.getProperty("db.user"));
+        this.password = System.getProperty("db.password", props.getProperty("db.password"));
     }
 
     // Mban "throws SQLException" qe thirresit ekzistues te mos ndryshojne.

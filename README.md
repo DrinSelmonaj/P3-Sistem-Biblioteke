@@ -55,7 +55,15 @@ cp src/main/resources/config.properties.example src/main/resources/config.proper
 
 Plotëso `db.user` dhe `db.password`. `config.properties` është në `.gitignore` dhe nuk shkon në GitHub.
 
-### 3. Llogaria e parë e bibliotekarit
+### 3. Të dhëna demo (opsionale)
+
+```bash
+psql -d biblioteka -f db/seed.sql
+```
+
+Shton 7 artikuj (5 libra, 2 DVD) dhe tre llogari me fjalëkalimin `demo1234`: **L001** (bibliotekar), **M001** dhe **M002** (anëtarë). Nëse e përdor këtë, hapi 4 s'nevojitet.
+
+### 4. Llogaria e parë e bibliotekarit (pa seed)
 
 Sign Up krijon vetëm anëtarë, dhe bibliotekarë të rinj mund të krijojë vetëm një bibliotekar ekzistues (menuja → "Shto bibliotekar të ri"). Prandaj i pari krijohet një herë direkt në DB; `pgcrypto` prodhon hash BCrypt që e pranon jBCrypt:
 
@@ -66,7 +74,7 @@ VALUES ('L001', 'Emri Mbiemri', 'email@shembull.com', NULL, 'LIBRARIAN', crypt('
 INSERT INTO librarians (person_id, employee_code) VALUES ('L001', 'EMP001');
 ```
 
-### 4. Ekzekutimi
+### 5. Ekzekutimi
 
 ```bash
 mvn compile exec:java -Dexec.mainClass=org.example.Main
@@ -76,9 +84,15 @@ Ose nga IntelliJ: `Main.java` → Run. Fjalëkalimi fshihet me `****` vetëm në
 
 ## Testet
 
+Testet e integrimit punojnë mbi një databazë të veçantë, që të mos prekin të dhënat reale:
+
 ```bash
-mvn test
+createdb biblioteka_test
+psql -d biblioteka_test -f db/schema.sql
+mvn test -Ddb.url=jdbc:postgresql://localhost:5432/biblioteka_test
 ```
+
+`-Ddb.url` (si dhe `-Ddb.user`, `-Ddb.password`) ka përparësi ndaj `config.properties`. Pa të, testet përdorin DB-në e konfiguruar.
 
 | Testi | Lloji | Çfarë vërteton |
 |---|---|---|
@@ -90,4 +104,4 @@ mvn test
 | `InventoryServiceTest` | integrimi | ISBN e normalizuar dhe unike; redaktimi s'e bën "të lirë" një libër të huazuar; artikujt me histori s'fshihen |
 | `AuthServiceTest` | integrimi | vetëm bibliotekarët krijojnë bibliotekarë; krijimi i llogarisë është atomik; validimi i Sign Up |
 
-Testet e integrimit kërkojnë PostgreSQL aktiv me `config.properties` të konfiguruar. Të dhënat e tyre krijohen me prefiks `TEST_` (`TestData`) dhe fshihen pas çdo testi. `LoanServiceAuthorizationTest` kërkon ende anëtarët `M001`, `M002` dhe të paktën një libër të disponueshëm.
+Testet s'kërkojnë asnjë të dhënë paraprake — kalojnë mbi një DB bosh të krijuar vetëm nga `schema.sql`. Çdo test krijon të dhënat e veta me prefiks `TEST_` (`TestData`) dhe i fshin në fund, edhe kur dështon.
