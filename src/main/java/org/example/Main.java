@@ -3,6 +3,7 @@ package org.example;
 import org.example.dao.*;
 import org.example.model.*;
 import org.example.service.*;
+import org.example.client.*;
 
 import java.io.Console;
 import java.time.LocalDate;
@@ -11,6 +12,7 @@ import java.util.Scanner;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.sql.SQLException;
 
 public class Main {
 
@@ -38,6 +40,7 @@ public class Main {
         FineService fineService = new FineService(fineDAO);
         ReservationService reservationService = new ReservationService();
         ReportService reportService = new ReportService();
+        OpenLibraryClient openLibraryClient = new OpenLibraryClient();
 
         // --- Scheduler per skadimin e rezervimeve "ready_for_pickup" ---
         // Thread daemon (setDaemon(true)) — kjo eshte pika kyçe: nese do ishte
@@ -100,7 +103,7 @@ public class Main {
         // --- Dallimi i menuse sipas rolit — perdor te njejten metode polimorfike
         // qe perdoret per autorizim ne LoanService/FineService (canManageInventory()).
         if (loggedInUser.canManageInventory()) {
-            librarianMenu(scanner, loggedInUser, loanService, fineService,reportService, loanDAO, bookDAO, dvdDAO);
+            librarianMenu(scanner, loggedInUser, loanService, fineService, reportService, openLibraryClient, loanDAO, bookDAO, dvdDAO);
         } else {
             memberMenu(scanner, loggedInUser, loanService, fineService, reservationService,
                     loanDAO, reservationDAO, bookDAO, dvdDAO);
@@ -207,6 +210,113 @@ public class Main {
                 System.out.println("  " + debt.memberId() + " — " + debt.name() + " | Borgji: " + debt.unpaidFines());
             }
         }
+    }
+    // Kerkon ne Open Library, lejon Librarian te zgjedhe nje rezultat, dhe krijon
+    // nje Book te ri lokal me te dhenat e marra + detajet qe mungojne (ID lokale,
+    // kategoria, dhe ISBN manual nese Open Library s'e ka dhene).
+    private static void importFromOpenLibrary(Scanner scanner, OpenLibraryClient client, BookDAO bookDAO) {
+        System.out.print("Kerko liber (titull): ");
+        String query = scanner.nextLine().trim();
+        if (query.isEmpty()) {
+            System.out.println("Shkruaj te pakten nje fjale per kerkim.");
+            return;
+        }
+
+        List<BookSearchResult> results;
+        try {
+            results = client.search(query);
+        } catch (RuntimeException e) {
+            System.out.println("Gabim gjate lidhjes me Open Library: " + e.getMessage());
+            return;
+        }
+
+        if (results.isEmpty()) {
+            System.out.println("S'u gjet asnje rezultat per '" + query + "'.");
+            return;
+        }
+
+        System.out.println("--- Rezultatet ---");
+        for (int i = 0; i < results.size(); i++) {
+            BookSearchResult r = results.get(i);
+            System.out.println("  " + (i + 1) + ") " + r.title() + " — " + r.author()
+                    + (r.firstPublishYear() != null ? " (" + r.firstPublishYear() + ")" : ""));
+        }
+
+        System.out.print("Zgjidh numrin (0 per te anuluar): ");
+        int choice;
+        try {
+            choice = Integer.parseInt(scanner.nextLine().trim());
+        } catch (NumberFormatException e) {
+            System.out.println("Gabim: duhej nje numer.");
+            return;
+        }
+        if (choice == 0) return;
+        if (choice < 1 || choice > results.size()) {
+            System.out.println("Numer i pavlefshem.");
+            return;
+        }
+
+        BookSearchResult selected = results.get(choice - 1);
+
+        String isbn = selected.isbn();
+        if (isbn == null) {
+            // books.isbn eshte NOT NULL UNIQUE ne skeme — Open Library s'e ka
+            // dhene per kete rezultat, duhet plotesuar manualisht.
+            System.out.print("Open Library s'ka ISBN per kete liber. Fute ISBN manualisht: ");
+            isbn = scanner.nextLine().trim();
+        }
+        // NOT NULL s'e ndalon "" — pa kete kontroll nje ISBN bosh do ruhej,
+        // dhe importi i radhes pa ISBN do deshtonte me "duplicate key".
+        if (isbn.isEmpty()) {
+            System.out.println("ISBN s'mund te jete bosh. Importi u anulua.");
+            return;
+        }
+
+        System.out.print("ID lokale per librin (p.sh. B020): ");
+        String id = scanner.nextLine().trim();
+        if (id.isEmpty()) {
+            System.out.println("ID s'mund te jete bosh. Importi u anulua.");
+            return;
+        }
+
+        System.out.println("--- Kategoria ---");
+        Category[] categories = Category.values();
+        for (int i = 0; i < categories.length; i++) {
+            System.out.println("  " + (i + 1) + ") " + categories[i].getDisplayName());
+        }
+        System.out.print("Zgjidh kategorine: ");
+        int categoryChoice;
+        try {
+            categoryChoice = Integer.parseInt(scanner.nextLine().trim());
+            if (categoryChoice < 1 || categoryChoice > categories.length) {
+                System.out.println("Numer i pavlefshem.");
+                return;
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Gabim: duhej nje numer.");
+            return;
+        }
+        Category category = categories[categoryChoice - 1];
+
+        try {
+            Book book = new Book(id, selected.title(), category, selected.author(), isbn);
+            bookDAO.save(book);
+            System.out.println("Libri u importua me sukses: " + book.getId() + " — " + book.getTitle());
+        } catch (RuntimeException e) {
+            if (isDuplicateKey(e)) {
+                System.out.println("ID ose ISBN ekziston tashme ne sistem. Provo vlera te tjera.");
+            } else {
+                System.out.println("Gabim gjate importimit: " + e.getMessage());
+            }
+        }
+    }
+
+    // I njejti pattern si isDuplicateUsername() — SQLState "23505" per shkelje
+    // te PRIMARY KEY/UNIQUE, tani i perdorur gjeneralisht (id ose isbn), jo vetem
+    // per username sign-up.
+    private static boolean isDuplicateKey(Throwable e) {
+        Throwable cause = e.getCause();
+        return cause instanceof SQLException sqlEx && "23505".equals(sqlEx.getSQLState());
     }
 
     // Ndihmes i perbashket per opsionet "6" dhe "7" — shfaq rezervimet aktive te
@@ -339,7 +449,8 @@ public class Main {
     }
 
     private static void librarianMenu(Scanner scanner, Person actor, LoanService loanService,
-                                      FineService fineService, ReportService reportService, LoanDAO loanDAO,
+                                      FineService fineService, ReportService reportService,
+                                      OpenLibraryClient openLibraryClient, LoanDAO loanDAO,
                                       BookDAO bookDAO, DVDDAO dvdDAO) {
         boolean running = true;
         while (running) {
@@ -349,7 +460,8 @@ public class Main {
             System.out.println("3. Krijo gjobe per nje huazim te vonuar");
             System.out.println("4. Shiko historine e plote te pagesave");
             System.out.println("5. Raporte");
-            System.out.println("6. Dil");
+            System.out.println("6. Importo liber nga Open Library");
+            System.out.println("7. Dil");
             System.out.print("Zgjedh: ");
             String choice = scanner.nextLine().trim();
 
@@ -394,6 +506,9 @@ public class Main {
                     printReports(reportService, actor);
 
                 } else if (choice.equals("6")) {
+                    importFromOpenLibrary(scanner, openLibraryClient, bookDAO);
+
+                } else if (choice.equals("7")) {
                     running = false;
 
                 } else {
